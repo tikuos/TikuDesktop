@@ -26,8 +26,9 @@ global_bar_rect(desktop_t *app)
 
 /**
  * @brief Draw the status area at the bar's right: a camera button that
- *        takes a screenshot.  Its rectangle is kept in app->shot_btn for
- *        presses.
+ *        takes a screenshot, and left of it the device tray, which stops
+ *        short of the menu titles.  The camera's rectangle is kept in
+ *        app->shot_btn for presses.
  */
 void
 global_bar_status_draw(desktop_t *app, tiku_rect_t strip)
@@ -38,6 +39,12 @@ global_bar_status_draw(desktop_t *app, tiku_rect_t strip)
     int bx = x0 + (cell - bw) / 2;
     int by = strip.y + (strip.h - bh) / 2 + 1;
     int cx = bx + bw / 2, cy = by + bh / 2 + 1, r = 4, i;
+    int motion = app->host != NULL &&
+                 !tiku_trk_prefs_get(prefs_model(app), "ReduceMotion");
+
+    desktop_devtray_draw(app, strip,
+                         strip.x + tiku_menubar_width(&app->gbar), x0,
+                         motion ? tiku_trk_now() : 0);
 
     app->shot_btn = (tiku_rect_t){ x0, strip.y, cell, strip.h };
     /* The cell is a little darker than the bar, darker still while
@@ -69,6 +76,7 @@ global_bar_status_draw(desktop_t *app, tiku_rect_t strip)
                   TIKU_C_TEXT);
     }
     tiku_fill(app->surf, (tiku_rect_t){ cx - 1, cy - 1, 2, 2 }, TIKU_C_TEXT);
+    desktop_devtray_draw_tip(app);
 }
 
 /**
@@ -457,6 +465,9 @@ rebuild_global_bar(desktop_t *app)
 static int
 system_invoke(desktop_t *app, int command)
 {
+    if (desktop_devtray_invoke(app, command)) {
+        return 1;
+    }
     if (command >= TIKU_TRK_CMD_DEVICE_PICK_BASE &&
         command < TIKU_TRK_CMD_DEVICE_PICK_BASE + TIKU_MOUNT_MAX) {
         char leaf[64];
@@ -549,6 +560,7 @@ global_or_invoke(desktop_t *app, folder_t *ffl, int command)
 {
     if (app->gbar_open >= 0 && app->gbar_from != NULL &&
         app->popup != &app->sysmenu && app->popup != &app->devmenu &&
+        app->popup != &app->devtraymenu &&
         app->gbar_from->menu_pick != NULL) {
         app->gbar_from->menu_pick(app->gbar_from, command,
                                   app->gbar_from->menu_pick_context);

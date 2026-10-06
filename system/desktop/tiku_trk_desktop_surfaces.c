@@ -214,6 +214,12 @@ popup_press(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     if (app->nav_on && nav_press(app, ev)) {
         return 1;
     }
+    if (app->popup == &app->devtraymenu) {
+        /* A second press on the cell the menu dropped from opens the
+         * board's folder.  The cell is outside the menu, so the press
+         * closes the menu below. */
+        (void)desktop_devtray_again(app, ev, tiku_trk_now());
+    }
     fw = tiku_workspace_focused(app->desk);
     ffl = (app->bar_fl != NULL) ? app->bar_fl
         : (app->popup_fl != NULL) ? app->popup_fl : folder_of(app, fw);
@@ -347,8 +353,9 @@ gbar_hit(void *self, int x, int y)
 /**
  * @brief A primary press on the strip: the camera at its right sets a
  *        screenshot pending, taken from the next frame drawn so that the
- *        press is not in the picture; a title opens its menu, built from
- *        what the focused window published.
+ *        press is not in the picture; a device tray cell drops its menu; a
+ *        title opens its menu, built from what the focused window
+ *        published.
  */
 static int
 gbar_press(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
@@ -368,6 +375,12 @@ gbar_press(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
         *damage = tiku_trk_damage_all();
         return 1;
     }
+    if (desktop_devtray_at(app, ev->x, ev->y) >= 0) {
+        commit_rename(app, 1);
+        (void)desktop_devtray_press(app, ev, tiku_trk_now());
+        *damage = tiku_trk_damage_all();
+        return 1;
+    }
     strip = global_bar_rect(app);
     bi = tiku_menubar_title_at(&app->gbar, strip, ev->x, ev->y);
     if (bi < 0) {
@@ -383,6 +396,14 @@ gbar_press(void *self, const tiku_event_t *ev, tiku_rect_t *damage)
     app->nav_on = 0;
     *damage = tiku_trk_damage_all();
     return 1;
+}
+
+/** @brief The strip's clock: the device tray follows the boards and ends
+ *         the red of a failure whose time is up. */
+static int
+gbar_tick(void *self, int64_t now, tiku_rect_t *damage)
+{
+    return desktop_devtray_tick(self, now, damage);
 }
 
 /* the spring navigator, tracked while a drag moves over it */
@@ -565,7 +586,7 @@ desktop_responders_attach(desktop_t *app)
     };
     app->gbar_responder = (tiku_trk_responder_t){
         .name = "global-bar", .self = app, .hit = gbar_hit,
-        .press = gbar_press
+        .press = gbar_press, .tick = gbar_tick
     };
     app->popup_responder = (tiku_trk_responder_t){
         .name = "popup", .self = app, .hit = popup_hit, .press = popup_press,

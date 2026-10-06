@@ -90,7 +90,8 @@ desktop_pointer_down(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
 
 /**
  * @brief The pointer moved: record where it is, choose the cursor's shape
- *        for what is under it, and hand the move to the responders.
+ *        for what is under it, hand the move to the responders, and show
+ *        or hide a device tray cell's tip.
  */
 void
 desktop_pointer_move(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
@@ -102,6 +103,7 @@ desktop_pointer_move(desktop_t *app, const tiku_event_t *ev, desktop_loop_t *lp)
     app->ptr_y = ev->y;
     desktop_pointer_says(app, ev->x, ev->y);
     deliver(app, ev);
+    desktop_devtray_hover(app, was_x, was_y);
     if (app->qdrag_on) {
         /* The dragged query icon: damage its old and new boxes only. */
         desktop_damage(app, tiku_rect_union(

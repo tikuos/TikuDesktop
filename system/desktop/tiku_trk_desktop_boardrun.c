@@ -953,12 +953,17 @@ desktop_board_reclaim_landed(desktop_t *app, tiku_backend_t *dev)
 
 /**
  * @brief Every port has answered the reclaim: tell the asker RECLAIMED or
- *        FAILED, and send every remote session the board list.
+ *        FAILED, turn the board's tray cell red when it was not found,
+ *        and send every remote session the board list.
  */
 void
 desktop_board_reclaim_done(desktop_t *app)
 {
     app->reclaim.going = 0;
+    if (!app->reclaim.found) {
+        desktop_devtray_failed(app, NULL, app->reclaim.name,
+                               "not found on any port");
+    }
     desktop_board_say(app, app->reclaim.session, app->reclaim.slot,
                       app->reclaim.found ? TIKU_APP_BOARD_RECLAIMED
                                          : TIKU_APP_BOARD_FAILED,

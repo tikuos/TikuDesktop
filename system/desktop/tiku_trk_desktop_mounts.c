@@ -236,6 +236,11 @@ channels_tend(desktop_t *app)
             tiku_channel_losses(ch) > 0) {
             tiku_trail("unmount %s: the link was lost",
                        app->channel_mount[k]);
+            if (strncmp(app->channel_mount[k], "/devices/", 9) == 0) {
+                desktop_devtray_failed(app, NULL,
+                                       app->channel_mount[k] + 9,
+                                       "the link was lost");
+            }
             (void)desktop_board_unmount(app, app->channel_mount[k]);
             app->channel_mount[k][0] = '\0';
             tiku_channel_close(ch);
@@ -536,9 +541,11 @@ mount_landed(desktop_t *app, tiku_backend_t *dev, const char *port,
     if (tiku_mount_add(app->backend, prefix, dev, 1) != 0) {
         tiku_trail("mount %s refused", prefix);
         tiku_backend_close(dev);
+        desktop_devtray_failed(app, port, NULL, "the mount was refused");
         return 0;
     }
     tiku_trail("mount %s on %s", prefix, port);
+    desktop_devtray_landed(app, port, prefix);
     /* A board mounted while no device is current becomes the current
      * device; a later board does not replace it. */
     if (app->current_device[0] == '\0' &&

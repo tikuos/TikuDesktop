@@ -412,6 +412,24 @@ typedef struct desktop {
         char uid[40];                   /**< the chip's unique id */
         int  used;                      /**< the entry holds a board */
     }                        released[TIKU_MOUNT_MAX]; /**< released boards */
+    /* The device tray on the global bar: a cell per board being connected,
+     * connected, lent or lost, in the order they came, cell 0 beside the
+     * camera. */
+    struct desktop_devtray {
+        int           state;            /**< a DESKTOP_DEVTRAY_ value */
+        char          port[256];        /**< its port, or "" */
+        char          name[64];         /**< its leaf under /devices, or ""
+                                         *   while it connects */
+        char          why[64];          /**< what went wrong, while red */
+        int64_t       since;            /**< when it came, microseconds */
+        int64_t       red_until;        /**< red until then, or 0 */
+        tiku_motion_t landing;          /**< the ring closing as it lands */
+    }                        devtray[TIKU_MOUNT_MAX];
+    /** Each cell as drawn last, or empty when it was not drawn. */
+    tiku_rect_t              devtray_box[TIKU_MOUNT_MAX];
+    char                     devtray_menu_of[64]; /**< the board the cell
+                                                   *   menu dropped from */
+    tiku_menu_t              devtraymenu; /**< a cell's menu */
     /** The remote window that took the current press, whose session gets the
      * moves and the release; NULL for none. */
     tiku_window_t  *remote_press;
@@ -836,6 +854,14 @@ typedef struct desktop_wire desktop_wire_t;
  * except that its answer does not end a look. */
 enum { DESKTOP_ASK_LOOK, DESKTOP_ASK_BOOT, DESKTOP_ASK_RECLAIM,
        DESKTOP_ASK_CONNECT };
+/* What a device tray cell shows. */
+enum {
+    DESKTOP_DEVTRAY_NONE = 0,   /**< a free cell */
+    DESKTOP_DEVTRAY_CONNECTING, /**< a connect probe is out on its port */
+    DESKTOP_DEVTRAY_CONNECTED,  /**< mounted under /devices */
+    DESKTOP_DEVTRAY_LENT,       /**< released for another program */
+    DESKTOP_DEVTRAY_GONE        /**< failed or lost: red, then freed */
+};
 
 /* Shared across the family: defined in one file, used in another. */
 
@@ -1001,6 +1027,27 @@ tiku_window_t *desktop_deviceprefs_handle(desktop_t *app);
 void desktop_deviceprefs_close(desktop_t *app);
 void desktop_deviceprefs_destroy(desktop_t *app);
 void desktop_deviceprefs_open(desktop_t *app);
+void desktop_deviceprefs_open_on(desktop_t *app, const char *name);
+
+/* tiku_trk_desktop_devtray.c */
+int desktop_devtray_again(desktop_t *app, const tiku_event_t *ev,
+                          int64_t now);
+int desktop_devtray_at(desktop_t *app, int x, int y);
+void desktop_devtray_connecting(desktop_t *app, const char *port);
+void desktop_devtray_draw(desktop_t *app, tiku_rect_t strip, int left,
+                          int right, int64_t now);
+void desktop_devtray_draw_tip(desktop_t *app);
+void desktop_devtray_failed(desktop_t *app, const char *port,
+                            const char *name, const char *why);
+void desktop_devtray_forget(desktop_t *app, const char *port);
+void desktop_devtray_hover(desktop_t *app, int was_x, int was_y);
+int desktop_devtray_invoke(desktop_t *app, int command);
+void desktop_devtray_landed(desktop_t *app, const char *port,
+                            const char *prefix);
+int desktop_devtray_press(desktop_t *app, const tiku_event_t *ev,
+                          int64_t now);
+int desktop_devtray_tick(desktop_t *app, int64_t now, tiku_rect_t *damage);
+int desktop_devtray_tip(desktop_t *app, char *out, size_t max);
 
 /* tiku_trk_desktop_draw.c */
 int resize_desktop(desktop_t *app, int width, int height);

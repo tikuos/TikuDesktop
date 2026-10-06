@@ -45,6 +45,36 @@ answered to, so a second scan is not needed to find it. If it was the
 current device, the desktop steps to another connected board, and falls
 back to this machine only when there is none.</p>
 
+<h2 id="tray">The device tray</h2>
+
+<p>The menu bar keeps a small chip for each board at its right end, left
+of the camera. A chip appears as soon as <b>Connect to</b> is chosen: it
+fades in inside a ring that turns until the board answers, and the ring
+closes round it and fades as the board is mounted. With <b>Reduce
+motion</b> on, the chip waits dimmed inside a still ring and turns solid
+when the board is mounted.</p>
+
+<ul>
+<li>A solid chip is a connected board. Resting the pointer on it names
+the board, its processor when that is another name, its port, and how
+long it has been connected.</li>
+<li>A dimmed chip with an arrow is a board lent to another program, such
+as a test run that reflashes it. Its port stays closed until the board
+is asked back.</li>
+<li>A red chip is a connect that nothing answered, a board whose link
+was lost, or a lent board that could not be found again. Its tip says
+which. It stays two seconds; a lent board's chip then goes back to
+dimmed, and any other goes.</li>
+</ul>
+
+<p>A click on a connected board's chip drops a menu: <b>Open</b> its
+folder, <b>Devices Preferences&#8230;</b> on that board, and
+<b>Disconnect</b>. A lent board's menu has <b>Reclaim</b>, which asks
+every port for the board and mounts it again under its name. A
+double-click on a connected board's chip opens its folder. The chips
+never cover the menu titles; when there is no room for all of them, the
+ones that came last are left out.</p>
+
 <h2 id="current">The current device</h2>
 
 <p>The current device is where work goes when a window is not told

@@ -273,11 +273,13 @@ probe_done(void *ctx)
         if (p->dev != NULL) {
             (void)mount_landed(app, p->dev, p->port,
                                p->at[0] ? p->at : NULL);
+        } else if (p->ch != NULL) {
+            tiku_trail("  %s: windows with no shell", p->port);
+            desktop_devtray_forget(app, p->port);
+            (void)channel_keep(app, p->ch);
         } else {
             tiku_trail("  %s: nothing answered", p->port);
-            if (p->ch != NULL) {
-                (void)channel_keep(app, p->ch);
-            }
+            desktop_devtray_failed(app, p->port, NULL, "nothing answered");
         }
         break;
     }
@@ -335,6 +337,9 @@ desktop_wire_probe(desktop_t *app, int kind, const char *port, int baud,
     if (tiku_work_post(&job) != 0) {
         free(p);
         return -1;
+    }
+    if (kind == DESKTOP_ASK_CONNECT) {
+        desktop_devtray_connecting(app, port);
     }
         tiku_trail("%s %s", probe ? "probe" : "open", p->port);
     return 0;

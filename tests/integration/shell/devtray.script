@@ -1,0 +1,47 @@
+# shell: desktop
+# home: fixture
+# prefs: factory
+# mount: /devices/board1
+# A board mounted under /devices has a cell on the menu bar, left of the
+# camera: the chip in the text colour, a tip that names the board, a menu
+# that opens its folder, a double-click that opens it too, and Disconnect,
+# which takes the cell away.  The mirror mount has no port, so Devices
+# Preferences is offered but off.
+wait 40
+note the cell left of the camera: the chip's pin-one mark in black
+expect-pixel 952 8 000000
+note resting on it says which board it is
+move 954 10
+wait 3
+expect-said tip board1, connected just now
+shot /tmp/trk_devtray_tip.png
+move 500 400
+wait 3
+expect-said tip
+note a click drops its menu, the cell drawn as an open title
+click 954 10
+wait 4
+expect-menu Open board1|Devices Preferences…||Disconnect|
+expect-pixel 945 10 336698
+expect-pixel 952 8 ffffff
+shot /tmp/trk_devtray_menu.png
+menu-pick Open board1
+wait 14
+expect-title board1
+key w ctrl
+wait 10
+expect-no-title board1
+note a double-click opens the folder as well
+click 954 10
+wait 2
+click 954 10
+wait 14
+expect-title board1
+note Disconnect unmounts the board and the cell goes
+click 954 10
+wait 4
+menu-pick Disconnect
+wait 20
+expect-pixel 952 8 d8d8d8
+shot /tmp/trk_devtray.png
+quit

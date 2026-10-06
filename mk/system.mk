@@ -151,6 +151,7 @@ DESKTOP_SHELL := system/desktop/tiku_trk_desktop.c \
                  system/desktop/tiku_desktop_volume_commands.c \
                  system/desktop/tiku_trk_desktop_panels.c \
                  system/desktop/tiku_trk_desktop_globalbar.c \
+                 system/desktop/tiku_trk_desktop_devtray.c \
                  system/desktop/tiku_trk_desktop_mounts.c \
                  system/desktop/tiku_trk_desktop_drivers.c \
                  system/desktop/tiku_trk_desktop_remote.c \

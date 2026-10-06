@@ -124,9 +124,11 @@ conduct_chrome(desktop_t *app, const char *name, char *out, size_t max)
         return 1;
     }
     if (strcmp(name, "tip") == 0) {
-        /* The text floating beside the pointer: an Info window's field
-         * pop-up or the Deskbar's tooltip, and empty for neither. */
-        if (!info_hover_text(app, out, max)) {
+        /* The text floating beside the pointer: a device tray cell's
+         * tip, an Info window's field pop-up or the Deskbar's tooltip,
+         * and empty for none. */
+        if (!desktop_devtray_tip(app, out, max) &&
+            !info_hover_text(app, out, max)) {
             snprintf(out, max, "%s", tiku_trk_deskbar_tip(app->deskbar));
         }
         return 1;

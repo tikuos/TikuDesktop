@@ -212,6 +212,7 @@ struct desktop_deviceprefs {
     desktop_t *app;
     tiku_window_t *window;
     char names[TIKU_MOUNT_MAX][64];
+    char want[64];             /* the board to show once no job is out */
     int count, selected, setting, busy, refs;
     int fact;                  /* the fact on show, or -1 */
     int estate;                /* the estate on show, or -1 */
@@ -1194,11 +1195,14 @@ static void dp_done(void *ctx)
     desktop_damage_all(p->app);
 }
 
+static void dp_show_wanted(struct desktop_deviceprefs *p);
+
 /**
  * @brief Release a job and its hold on the window's state, freeing the
  *        state with the last hold.  A job that did not complete was
  *        cancelled: the window clears its values and reports the device
- *        disconnected.
+ *        disconnected.  A board asked for while the job was out is shown
+ *        when the window is open.
  */
 static void dp_free(void *ctx)
 {
@@ -1220,6 +1224,9 @@ static void dp_free(void *ctx)
         snprintf(p->status, sizeof p->status,
             "Device disconnected. Refresh the list.");
         desktop_damage_all(p->app);
+    }
+    if (p->app != NULL && p->window != NULL && p->want[0] != '\0') {
+        dp_show_wanted(p);
     }
     if (--p->refs == 0) free(p);
     free(j);
@@ -1441,6 +1448,10 @@ static void dp_refresh(struct desktop_deviceprefs *p)
     if (p->busy) return;
     if (p->selected >= 0 && p->selected < p->count)
         snprintf(selected, sizeof selected, "%s", p->names[p->selected]);
+    if (p->want[0] != '\0') {
+        snprintf(selected, sizeof selected, "%s", p->want);
+        p->want[0] = '\0';
+    }
     p->count = 0;
     p->selected = 0;
     names[0] = '\0';
@@ -1464,6 +1475,40 @@ static void dp_refresh(struct desktop_deviceprefs *p)
     snprintf(p->status, sizeof p->status,
              "Connect a device from the desktop Devices menu.");
     dp_request(p, -1);
+}
+
+/** @brief Show board @p i: the values on show are cleared and a read of
+ *         the board is posted. */
+static void dp_select(struct desktop_deviceprefs *p, int i)
+{
+    p->selected = i;
+    memset(p->values, 0, sizeof p->values);
+    memset(p->fact_values, 0, sizeof p->fact_values);
+    p->sram_map[0] = p->nvm_map[0] = '\0';
+    memset(&p->clock, 0, sizeof p->clock);
+    memset(p->config, 0, sizeof p->config);
+    memset(&p->pending, 0, sizeof p->pending);
+    p->confirm = 0;
+    p->erase = 0;
+    p->tier_request[0] = '\0';
+    p->can_enroll = 0;
+    dp_request(p, -1);
+}
+
+/** @brief Show the board in p->want when the list has it, and forget the
+ *         want either way. */
+static void dp_show_wanted(struct desktop_deviceprefs *p)
+{
+    int i;
+    for (i = 0; i < p->count; i++) {
+        if (strcmp(p->names[i], p->want) == 0) {
+            p->want[0] = '\0';
+            if (i != p->selected) dp_select(p, i);
+            desktop_damage_all(p->app);
+            return;
+        }
+    }
+    p->want[0] = '\0';
 }
 
 /** @brief Draw @p text wrapped to @p width, in at most @p lines lines. */
@@ -2087,18 +2132,7 @@ static int dp_event(tiku_window_t *w, const tiku_event_t *ev, void *ctx)
     }
     if (result.activated >= DP_DEVICE &&
         result.activated < DP_DEVICE + p->count) {
-        p->selected = result.activated - DP_DEVICE;
-        memset(p->values, 0, sizeof p->values);
-        memset(p->fact_values, 0, sizeof p->fact_values);
-        p->sram_map[0] = p->nvm_map[0] = '\0';
-        memset(&p->clock, 0, sizeof p->clock);
-        memset(p->config, 0, sizeof p->config);
-        memset(&p->pending, 0, sizeof p->pending);
-        p->confirm = 0;
-        p->erase = 0;
-        p->tier_request[0] = '\0';
-        p->can_enroll = 0;
-        dp_request(p, -1);
+        dp_select(p, result.activated - DP_DEVICE);
     } else if (result.activated >= DP_ROW &&
                result.activated < DP_ROW + p->nrow) {
         dp_row_t r = p->rows[result.activated - DP_ROW];
@@ -2192,6 +2226,16 @@ void desktop_deviceprefs_close(desktop_t *app)
  *         bring it to the front when it is open. */
 void desktop_deviceprefs_open(desktop_t *app)
 {
+    desktop_deviceprefs_open_on(app, NULL);
+}
+
+/**
+ * @brief Open the Devices Preferences window on board @p name, or bring it
+ *        to the front and show that board; a board asked for while a read
+ *        is out shows when the read ends.  NULL keeps the board on show.
+ */
+void desktop_deviceprefs_open_on(desktop_t *app, const char *name)
+{
     struct desktop_deviceprefs *p = app->deviceprefs;
     tiku_rect_t r;
     dp_layout_t l;
@@ -2209,8 +2253,14 @@ void desktop_deviceprefs_open(desktop_t *app)
         tiku_choice_init(&p->choice);
         app->deviceprefs = p;
     }
+    if (name != NULL) {
+        snprintf(p->want, sizeof p->want, "%s", name);
+    }
     if (p->window != NULL && p->window->open) {
         tiku_workspace_activate(app->desk, p->window);
+        if (!p->busy && p->want[0] != '\0') {
+            dp_show_wanted(p);
+        }
         return;
     }
     r.w = 270 + tiku_text_width(tiku_font_plain(),

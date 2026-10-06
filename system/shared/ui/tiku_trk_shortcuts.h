@@ -123,6 +123,13 @@ enum {
 #define TIKU_TRK_CMD_DEVICE_CONNECT_BASE 0x2100
 #define TIKU_TRK_CMD_DEVICE_DROP_BASE    0x2200
 
+/* A device tray cell's menu on the global bar: each acts on the board the
+ * menu dropped from. */
+#define TIKU_TRK_CMD_DEVTRAY_OPEN       0x2300
+#define TIKU_TRK_CMD_DEVTRAY_PREFS      0x2301
+#define TIKU_TRK_CMD_DEVTRAY_DISCONNECT 0x2302
+#define TIKU_TRK_CMD_DEVTRAY_RECLAIM    0x2303
+
 /**
  * @brief The up arrow as a shortcut key: outside the printable range, so
  *        it cannot be taken for a letter.
