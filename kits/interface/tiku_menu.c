@@ -585,6 +585,20 @@ tiku_menubar_title_at(const tiku_menubar_t *b, tiku_rect_t frame,
     return -1;
 }
 
+int
+tiku_menubar_width(const tiku_menubar_t *b)
+{
+    int i, w = 2;
+
+    if (b == NULL) {
+        return 0;
+    }
+    for (i = 0; i < b->count; i++) {
+        w += title_width(b->menu[i]);
+    }
+    return w;
+}
+
 tiku_rect_t
 tiku_menubar_panel(tiku_menubar_t *b, tiku_rect_t frame,
                        tiku_rect_t screen)

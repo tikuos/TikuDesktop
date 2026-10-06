@@ -239,6 +239,10 @@ void tiku_menubar_remove(tiku_menubar_t *b, tiku_menu_t *m);
 int tiku_menubar_title_at(const tiku_menubar_t *b,
                               tiku_rect_t frame, int x, int y);
 
+/** @brief How far the titles reach from the bar's left edge, in pixels;
+ *         what a bar may draw beside them starts there. */
+int tiku_menubar_width(const tiku_menubar_t *b);
+
 /** @brief Where the open menu's panel sits, under its title. */
 tiku_rect_t tiku_menubar_panel(tiku_menubar_t *b,
                                         tiku_rect_t frame,

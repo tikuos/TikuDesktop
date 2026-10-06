@@ -341,6 +341,14 @@ main(void)
         (void)tiku_menubar_insert(&bar, 1, &attr);
         check(bar.count == 2 && bar.menu[1] == &attr,
               "Attributes inserts at its own index");
+        {
+            tiku_rect_t strip = { 0, 0, 640, 20 };
+            int w = tiku_menubar_width(&bar);
+
+            check(tiku_menubar_title_at(&bar, strip, w - 1, 5) == 1 &&
+                  tiku_menubar_title_at(&bar, strip, w, 5) == -1,
+                  "the titles end where the bar's width says");
+        }
         tiku_menubar_remove(&bar, &attr);
         check(bar.count == 1 && bar.menu[0] == &win,
               "and leaves again when the view mode changes");
