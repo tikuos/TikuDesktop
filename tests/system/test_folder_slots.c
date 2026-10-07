@@ -81,6 +81,13 @@ main(void)
         pose = tiku_trk_poseview_at(fl->view, 0);
         pose->model.facts.total = 1000u;
         pose->model.facts.avail = 500u;
+        tiku_trk_press_t press = {0};
+        render.press = &press;
+        uint32_t idle = pose_signature(fl, pose);
+        press.down = 1; press.folder = fl; press.row = 0;
+        check(pose_signature(fl, pose) != idle, "D-045",
+              "held press participates in the icon cache key");
+        render.press = NULL;
         before = row_signature(fl, pose, 0, 0, 0);
         pose->model.facts.total = 4000u;
         check(row_signature(fl, pose, 0, 0, 0) != before, "D-025",
@@ -123,6 +130,21 @@ main(void)
     }
 
     if (fl != NULL) {
+        tiku_trk_poseview_set_results(fl->view, NULL, 0);
+        tiku_theme_set(tiku_theme_dark());
+        check(abs((int)(folder_background(fl->view) & 255) -
+                  (int)(TIKU_C_DOC & 255)) >= 12, "D-044",
+              "query background remains distinguishable in the dark theme");
+        tiku_theme_set(NULL);
+        int finding = 0; char count_text[256] = {0};
+        render.finding = &finding;
+        render.status = "";
+        render.count_text = count_text;
+        render.count_text_size = sizeof count_text;
+        fl->live = 1;
+        draw_count(fl, surf, (tiku_rect_t){0, 0, 500, 100}, 0);
+        check(strstr(count_text, "live") != NULL, "D-047",
+              "finished query count identifies live results");
         tiku_trk_folder_lifecycle_close(&life, fl);
     }
 

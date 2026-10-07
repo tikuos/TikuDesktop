@@ -271,6 +271,10 @@ the_hangup(tiku_link_t *l, int board)
     close(board);
     gather(l, 99);
     check(tiku_link_lost(l) == 1, "the board hanging up is one fault");
+    check(tiku_link_tcp_stats(l)->faults == 1u,
+          "D-173: consuming the fault preserves the lifetime counter");
+    check(tiku_link_lost(l) == 0 && tiku_link_tcp_stats(l)->faults == 1u,
+          "D-173: the same fault is not reported twice");
     check(tiku_link_send(l, "x", 1u) == -1 && !tiku_link_ready(l),
           "and the link takes nothing after it");
 }

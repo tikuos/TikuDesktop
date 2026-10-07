@@ -15,6 +15,10 @@
 #include "../../system/deskbar/bar/tiku_trk_deskbar_private.h"
 
 static int fails;
+void db_draw_tip(tiku_trk_deskbar_t *db, tiku_surface_t *s);
+void db_draw_calendar(tiku_trk_deskbar_t *, tiku_surface_t *,
+                      const tiku_font_t *, const tiku_font_t *, tiku_rgb_t);
+void db_draw_leaf_menu(tiku_trk_deskbar_t *, tiku_surface_t *, const tiku_font_t *);
 
 static void
 check(int cond, const char *row, const char *what)
@@ -277,6 +281,36 @@ down_arrow(void)
 int
 main(void)
 {
+    tiku_surface_t *s = tiku_surface_new(800, 600, TIKU_C_BACKDROP);
+    tiku_trk_deskbar_t *db = fixture(s, TIKU_TRK_DB_LEFT_EXPANDED, 1);
+    strcpy(db->tip, "Application name"); db->tip_y = 100;
+    tiku_fill(s, (tiku_rect_t){0, 0, 800, 600}, TIKU_C_BACKDROP);
+    db_draw_tip(db, s);
+    tiku_rect_t f = db->frame;
+    int outside = 0;
+    for (int y = 100; y < 125; y++)
+        for (int x = f.x + f.w + 2; x < f.x + f.w + 150; x++)
+            outside += tiku_peek(s, x, y) != TIKU_C_BACKDROP;
+    check(outside > 20, "D-211", "left-docked tooltip appears beside the bar");
+    db->calendar_open = 1; db->calendar_year = 2026; db->calendar_month = 5;
+    tiku_rect_t cal = db_calendar_rect(db);
+    db_draw_calendar(db, s, tiku_font_plain(), tiku_font_bold(), TIKU_C_TEXT);
+    check(tiku_peek(s, cal.x + 8, cal.y + 10) == TIKU_C_TEXT,
+          "D-076", "calendar month stepper has a visible arrow");
+    db->calendar_open = 0;
+    db->menu_open = 1; db->dragging = 1;
+    db->leaf_count = 1; db->leaf[0].kind = TIKU_TRK_DB_ITEM_ROW;
+    db->leaf[0].command = TIKU_TRK_DB_FIND;
+    strcpy(db->leaf[0].label, "Find");
+    db->menu_seen = 1; db->motion_now = 100000000;
+    db_draw_leaf_menu(db, s, tiku_font_plain());
+    tiku_rect_t menu = db_leaf_menu_rect(db, tiku_font_plain()->height + 6, 1);
+    int bright = 0;
+    for (int y = menu.y + 3; y < menu.y + menu.h - 3; y++)
+        for (int x = menu.x + 8; x < menu.x + menu.w - 8; x++)
+            bright += tiku_peek(s, x, y) == TIKU_C_TEXT;
+    check(bright == 0, "D-210", "fixed menu action is dimmed during a drag");
+    tiku_trk_deskbar_free(db); tiku_surface_free(s);
     scrolled_list();
     window_row_drop();
     left_dock_popups();

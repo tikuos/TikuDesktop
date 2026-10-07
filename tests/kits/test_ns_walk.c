@@ -16,6 +16,7 @@
 #define _DEFAULT_SOURCE 1
 #include "tiku_model.h"
 #include "tiku_tx.h"
+#include "tiku_ns.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -26,6 +27,7 @@ static int fails;
 static char line[1024];
 static size_t line_len;
 static int board_fd = -1;
+static const char *events = "";
 
 /** @brief One result line; a failure counts. */
 static void
@@ -58,6 +60,8 @@ board_line(const char *cmd)
     if (strncmp(cmd, "read /sys/vfs/manifest 0 ", 25) == 0) {
         say("# path\tkind\tperm\tmeta\tcap\tid\r\n");
         say("/gui\td\t--\t-\t-\t1\r\n");
+    } else if (strcmp(cmd, "cat /sys/vfs/events") == 0) {
+        say(events);
     } else if (strcmp(cmd, "ls /gui") == 0) {
         say("  rw both\r\n");
         say("  -w poke\r\n");
@@ -104,6 +108,33 @@ perm_of(tiku_backend_t *b, const char *path)
     return m.facts.perm & (TIKU_P_READ | TIKU_P_WRITE);
 }
 
+/** @brief Dropped event counts include both device losses and local capacity. */
+static void
+event_counts(tiku_backend_t *b)
+{
+    tiku_ns_t *ns = tiku_ns_new(tiku_backend_tiku_session(b));
+    tiku_ns_change_t out[3];
+    unsigned dropped;
+    int cap;
+
+    events = "write 10 1\r\nwrite 20 2\r\nremove 30 3\r\n"
+             "# 3 drained, 2 dropped\r\n";
+    for (cap = 0; cap <= 3; cap++) {
+        check(tiku_ns_events(ns, out, cap, &dropped) == cap &&
+              dropped == (unsigned)(5 - cap),
+              "D-176: local overflow adds to device-reported losses");
+    }
+    check(tiku_ns_events(ns, NULL, 3, &dropped) == 0 && dropped == 5,
+          "D-176: an absent output buffer counts every drained record");
+    check(tiku_ns_events(ns, out, 3, NULL) == 3 &&
+          out[0].id == 0x10 && out[2].seq == 3,
+          "D-176: dropped is optional and records keep their values");
+    events = "write 10 1\r\nwrite 20 2\r\n";
+    check(tiku_ns_events(ns, out, 1, &dropped) == 1 && dropped == 1,
+          "D-176: local overflow is counted without a device footer");
+    tiku_ns_free(ns);
+}
+
 int
 main(void)
 {
@@ -129,6 +160,7 @@ main(void)
           "a file ls lists as -w shows write only");
     check(perm_of(b, "/gui/view") == TIKU_P_READ,
           "a file ls lists as r- shows read only");
+    event_counts(b);
     tiku_backend_close(b);
     close(sv[0]);
     close(sv[1]);

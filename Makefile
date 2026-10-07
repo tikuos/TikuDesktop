@@ -91,7 +91,8 @@ $(BUILD) $(SYSTEM) $(DEV) $(BUILD)/tests $(APPS_D): | prepare-build
 # the build's own directory, which is where a test that writes a sheet
 # into build/ or compiles a fixture against the kits expects to be.
 test: all
-	@$(MAKE) --no-print-directory check-architecture check-font check-toolkit
+	@$(MAKE) --no-print-directory check-architecture check-font check-toolkit \
+	    check-tools
 # The suites that are about having more than one volume ask the harness
 # for a second one; on Linux that is /dev/shm and nothing is mounted or
 # given back.  Opened once for the whole loop and released however the
@@ -133,6 +134,13 @@ check-layout:
 
 check-shipping:
 	@python3 tools/check_shipping.py
+
+# The Python checks of the tools themselves: style discovery, icon
+# regeneration and the font comparison's glyphdump path.
+.PHONY: check-tools
+check-tools:
+	@python3 tests/kits/test_audit_tools.py
+	@python3 tests/kits/test_glyphdump_path.py
 
 # The comment and commit rules are house convention kept in the tikuOS
 # checkout's hygiene/, which is gitignored there and absent from a clone

@@ -220,6 +220,27 @@ main(void)
           "D-217", "the rename editor is drawn over the Name cell");
     check(differ(rows, plain, cell_of(fl, list, -1)) == 0, "D-217",
           "and leaves the column now first alone");
+    for (int width = 80; width <= 400; width += 320) {
+        char long_name[180];
+        tiku_rect_t name, beyond;
+
+        memset(long_name, 'W', sizeof long_name - 1);
+        long_name[sizeof long_name - 1] = '\0';
+        tiku_field_stop(&edit.rename_edit);
+        tiku_field_start(&edit.rename_edit, long_name);
+        tiku_trk_poseview_resize_column(fl->view, TIKU_TRK_COL_NAME, width);
+        name = cell_of(fl, list, TIKU_TRK_COL_NAME);
+        beyond = (tiku_rect_t){name.x + name.w + 2, name.y,
+                              700 - name.x - name.w - 2, name.h};
+        paint_rows(fl, plain, list);
+        paint_rows(fl, rows, list);
+        draw_transients(fl, rows, list, 0, 0, 0, 4, 0);
+        check(differ(rows, plain, beyond) == 0, "D-046",
+              "rename stays inside a resized Name column");
+        check(differ(rows, plain,
+                     (tiku_rect_t){name.x + name.w - 8, name.y, 6, name.h})
+              > 0, "D-046", "long names use the available column width");
+    }
     edit.renaming = 0;
     tiku_field_stop(&edit.rename_edit);
 

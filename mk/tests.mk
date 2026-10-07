@@ -30,11 +30,13 @@ test_springmenu_SRCS   := system/shared/ui/tiku_trk_springmenu.c
 test_responders_SRCS   := system/shared/ui/tiku_trk_responder.c
 test_color_SRCS   := system/shared/core/tiku_trk_color.c
 test_addon_SRCS   := system/shared/shell/tiku_trk_addon.c
+test_addon_reap_SRCS := $(test_addon_SRCS)
 test_script_engine_SRCS := $(SCRIPT_ENGINE)
 test_script_stub_SRCS := $(SCRIPT_STUB)
 test_state_pipeline_SRCS   := system/shared/core/tiku_trk_state_pipeline.c
 test_model_SRCS   := $(COMMON)
 test_poseview_SRCS   := $(COMMON) $(POSEVIEW)
+test_pose_state_audit_SRCS := $(test_poseview_SRCS)
 test_fs_SRCS   := $(COMMON)
 test_types_SRCS   := $(COMMON)
 test_scroll_SRCS   := $(COMMON)
@@ -112,6 +114,10 @@ test_document_reader_LDLIBS := $(X11_LIBS) -lm
 test_image_viewer_LDLIBS := $(X11_LIBS) -lm
 test_pdf_viewer_LDLIBS := $(X11_LIBS) -lm
 test_fontset_LDLIBS := -lpthread
+test_fontscan_audit_LDLIBS := -lpthread
+test_office_caps_LDLIBS := -lpthread
+test_office_piebar_LDLIBS := -lpthread
+test_office_merged_pages_LDLIBS := -lpthread
 test_pdf_writer_LDLIBS := -lpthread
 test_office_LDLIBS := -lpthread
 test_office_viewer_LDLIBS := $(X11_LIBS) -lm -lpthread
@@ -171,6 +177,7 @@ test_copybits_SRCS   := $(COMMON)
 test_background_SRCS   := $(COMMON)
 test_iconview_SRCS   := $(COMMON) $(POSEVIEW)
 test_poseview_layout_SRCS := $(COMMON) $(POSEVIEW)
+test_tracker_audit_SRCS := $(sort $(COMMON) $(POSEVIEW) system/shared/ui/tiku_trk_shortcuts.c system/shared/core/tiku_trk_alert.c)
 test_info_SRCS   := $(COMMON)
 test_panel_SRCS   := $(COMMON) $(POSEVIEW)
 test_nodeicon_SRCS   := $(COMMON)
@@ -208,6 +215,7 @@ test_conduct_LDLIBS := $(X11_LIBS) -lm
 test_remote_LDLIBS := -lpthread
 test_client_wake_LDLIBS := $(X11_LIBS) -lm
 test_client_reports_LDLIBS := $(X11_LIBS) -lm
+test_client_present_LDLIBS := $(X11_LIBS) -lm
 test_appload_LDLIBS := $(X11_LIBS) -lm -ldl
 test_appload_CFLAGS := -DTIKU_KITS_DIR=\"$(K)\"
 test_shm_LDLIBS := $(X11_LIBS) -lm $(RT_LIBS)
@@ -226,6 +234,11 @@ test_work_start_CFLAGS := -I$(K)/support
 test_work_start_LDLIBS := -lpthread
 ifeq ($(UNAME_S),Linux)
 test_work_start_LDLIBS += -Wl,--wrap=pthread_create
+endif
+# stat() routed through the test, which counts the calls a freshness
+# check makes.
+ifeq ($(UNAME_S),Linux)
+test_thumb_freshness_LDLIBS := -Wl,--wrap=stat
 endif
 test_report_LDLIBS := -rdynamic
 test_reap_CFLAGS := -I$(K)/support -Isystem/shared/core
@@ -278,6 +291,10 @@ test_frames_SRCS := $(filter-out system/desktop/tiku_trk_desktop.c \
     system/shared/shell/tiku_trk_launcher.c,$(DESKTOP_SRC)) \
     $(SCRIPT_STUB)
 test_frames_LDLIBS := $(X11_LIBS) -lm -ldl $(GC_SECTIONS)
+test_screenshot_release_CFLAGS := -ffunction-sections -fdata-sections
+test_screenshot_release_LDLIBS := $(GC_SECTIONS)
+test_roster_self_SRCS := $(filter-out system/deskbar/tiku_trk_deskbar_roster.c,$(test_deskbar_dock_SRCS))
+test_roster_self_LDLIBS := $(X11_LIBS) -lm
 # The drop controller as the desktop links it, its shell left out.
 test_drop_trash_CFLAGS := -ffunction-sections -fdata-sections
 test_drop_trash_SRCS := $(test_frames_SRCS)
@@ -370,6 +387,8 @@ test_desktop_boot_LDLIBS := $(X11_LIBS) -lm -ldl -lpthread $(GC_SECTIONS)
 test_device_utilities_SRCS := system/shared/core/tiku_trk_task.c
 test_device_utilities_LDLIBS := $(X11_LIBS) -lm
 test_about_memory_CFLAGS := -ffunction-sections -fdata-sections
+test_board_mcu_CFLAGS := -ffunction-sections -fdata-sections
+test_board_mcu_LDLIBS := $(X11_LIBS) -lm $(GC_SECTIONS)
 test_about_memory_LDLIBS := $(X11_LIBS) -lm $(GC_SECTIONS)
 test_registry_SRCS := system/shared/core/tiku_trk_task.c
 test_registry_LDLIBS := $(X11_LIBS) -lm
@@ -404,6 +423,7 @@ test_deskprefs_SRCS   := system/shared/core/tiku_trk_deskprefs.c system/shared/c
 # The editor kit's suites link the kit, which is not one of the seven
 # every test takes.
 test_editdoc_storage_LIBS := $(LIB_EDITOR)
+test_editor_regressions_LIBS := $(LIB_EDITOR)
 test_editdoc_lines_LIBS := $(LIB_EDITOR)
 test_editdoc_LIBS := $(LIB_EDITOR)
 test_editdoc_history_LIBS := $(LIB_EDITOR)

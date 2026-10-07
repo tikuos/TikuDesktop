@@ -73,5 +73,18 @@ int main(void)
     assert(st.dev[0].lay[0].est[1].size == 3112960);
     assert(st.dev[0].lay[0].est[1].used == 4096);
     puts("about_memory: map fixtures PASS");
+    memset(&st, 0, sizeof st);
+    row(&st, "sram", "bank\t100");
+    row(&st, "sram", "tier\t100\t50");
+    st.surface = tiku_surface_new(500, 120, 0);
+    paint_layout(&st, 0, 0, 0, 0);
+    estate_look("tier", &hue);
+    int bad_edge = st.surface->px[1 * 500 + 100] !=
+                   tiku_tint(TIKU_C_PANEL, 1.18f);
+    int bad_unused = st.surface->px[5 * 500 + 350] != tiku_tint(hue, 0.45f);
+    tiku_surface_free(st.surface);
+    if (bad_edge) puts("FAIL D-042: bar edge must be sunken");
+    if (bad_unused) puts("FAIL D-043: unused capacity must be lighter");
+    if (bad_edge || bad_unused) return 1;
     return 0;
 }

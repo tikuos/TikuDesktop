@@ -161,27 +161,29 @@ assemble(unsigned char *out, const int *prog, size_t n)
     return k;
 }
 
-/** @brief A program as a charstring: four lead bytes, ciphered;
- *         @return its length. */
+/** @brief Encode a program with @p leniv prefix bytes; -1 is plaintext. */
 static size_t
-charstring(unsigned char *out, const t1_src_t *src)
+charstring(unsigned char *out, const t1_src_t *src, int leniv)
 {
-    size_t k;
+    size_t prefix = leniv < 0 ? 0 : (size_t)leniv, k;
 
-    memset(out, 0, 4);
-    k = assemble(out + 4, src->prog, src->n);
-    encrypt(out, k + 4, 4330);
-    return k + 4;
+    /* Prefix bytes are endchar operators, so executing them ends the glyph. */
+    memset(out, 14, prefix);
+    k = prefix + assemble(out + prefix, src->prog, src->n);
+    if (leniv >= 0) {
+        encrypt(out, k, 4330);
+    }
+    return k;
 }
 
 /** @brief @p src as "<head> <bytes> <tail>" onto @p body at @p n;
  *         @return the new length. */
 static size_t
 put(unsigned char *body, size_t n, const char *head, const t1_src_t *src,
-    const char *tail)
+    const char *tail, int leniv)
 {
     unsigned char cs[256];
-    size_t k = charstring(cs, src);
+    size_t k = charstring(cs, src, leniv);
 
     n += (size_t)sprintf((char *)body + n, "%s %zu RD ", head, k);
     memcpy(body + n, cs, k);
@@ -191,7 +193,8 @@ put(unsigned char *body, size_t n, const char *head, const t1_src_t *src,
 
 /** @brief The font as its bytes, PFA style with a binary eexec part. */
 static size_t
-make_font(unsigned char *out, size_t max)
+make_font_options(unsigned char *out, size_t max, const char *declaration,
+                  int leniv)
 {
     static const char head[] =
         "%!PS-AdobeFont-1.0: Test\n"
@@ -209,17 +212,17 @@ make_font(unsigned char *out, size_t max)
 
     memset(body, 0, 4);
     n += (size_t)sprintf((char *)body + n, "dup /Private 8 dict dup begin\n"
-                         "/lenIV 4 def\n/Subrs %zu array\n",
+                         "%s/Subrs %zu array\n", declaration,
                          sizeof subrs / sizeof subrs[0]);
     for (i = 0; i < sizeof subrs / sizeof subrs[0]; i++) {
         snprintf(name, sizeof name, "dup %zu", i);
-        n = put(body, n, name, &subrs[i], " NP\n");
+        n = put(body, n, name, &subrs[i], " NP\n", leniv);
     }
     n += (size_t)sprintf((char *)body + n, "ND\nend\n/CharStrings %zu dict "
                          "dup begin\n", sizeof glyphs / sizeof glyphs[0]);
     for (i = 0; i < sizeof glyphs / sizeof glyphs[0]; i++) {
         snprintf(name, sizeof name, "/%s", glyphs[i].name);
-        n = put(body, n, name, &glyphs[i], " ND\n");
+        n = put(body, n, name, &glyphs[i], " ND\n", leniv);
     }
     n += (size_t)sprintf((char *)body + n, "end\nmark currentfile "
                                             "closefile\n");
@@ -230,6 +233,13 @@ make_font(unsigned char *out, size_t max)
     memcpy(out, head, sizeof head - 1);
     memcpy(out + sizeof head - 1, body, n);
     return sizeof head - 1 + n;
+}
+
+/** @brief Encode a font with the default four-byte charstring prefix. */
+static size_t
+make_font(unsigned char *out, size_t max)
+{
+    return make_font_options(out, max, "/lenIV 4 def\n", 4);
 }
 
 /** @brief Glyph @p name outlined at one pixel a unit into @p path;
@@ -277,6 +287,41 @@ machine_tests(const tiku_t1_t *t1, tiku_path_t *path)
           "a Subr number past int is refused, and the glyph ends there");
 }
 
+/** @brief Check glyphs and subroutines for valid and malformed lenIV values. */
+static void
+leniv_tests(tiku_path_t *path)
+{
+    static const struct { const char *declaration; int leniv; } cases[] = {
+        {"/lenIV -1 def\n", -1}, {"/lenIV 0 def\n", 0},
+        {"/lenIV 1 def\n", 1}, {"/lenIV 4 def\n", 4},
+        {"/lenIV 8 def\n", 8}, {"", 4},
+        {"/lenIV invalid def\n", 4}, {"/lenIV - def\n", 4},
+        {"/lenIV -2 def\n", 4}, {"/lenIV 2147483648 def\n", 4},
+        {"/lenIV 99999999999999999999999999999 def\n", 4},
+        {"/lenIV 1invalid def\n", 4}, {"/lenIV +4 def\n", 4}
+    };
+    unsigned char font[8192];
+    size_t i;
+
+    for (i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        size_t n = make_font_options(font, sizeof font,
+                                     cases[i].declaration, cases[i].leniv);
+        tiku_t1_t *t1 = tiku_t1_open(font, n);
+        int b[4];
+        float adv;
+        char row[20];
+
+        snprintf(row, sizeof row, "T1-IV-%02zu", i);
+        check(outline(t1, path, "square", b, &adv) && adv == 600 &&
+              b[0] == 99 && b[1] == -502 && b[2] == 402 && b[3] == 404,
+              row, "lenIV preserves the glyph's width and outline");
+        check(outline(t1, path, "pair", b, &adv) && adv == 600 &&
+              b[0] == 99 && b[1] == -702 && b[2] == 402 && b[3] == 604,
+              row, "lenIV applies to subroutines and hint replacement");
+        tiku_t1_close(t1);
+    }
+}
+
 /** @brief The font made, read back and drawn; @return 0 when every row
  *         passes. */
 int
@@ -312,6 +357,7 @@ main(void)
     check(tiku_t1_open((const unsigned char *)"%!PS not a font", 15) == NULL,
           "T1-009", "text without an eexec part is not a font");
     machine_tests(t1, path);
+    leniv_tests(path);
     tiku_path_free(path);
     tiku_t1_close(t1);
     printf("%s\n", fails ? "FAIL" : "PASS: Type 1 fonts read back");

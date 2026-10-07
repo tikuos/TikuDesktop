@@ -225,6 +225,59 @@ encoding_tests(void)
     tiku_xml_free(x);
 }
 
+/** @brief Windows-1252 declarations decode text and attribute punctuation. */
+static void
+windows_encoding_tests(void)
+{
+    static const char *enc[] = {"windows-1252", "cp1252", "WINDOWS-1252"};
+    static const char bytes[] = "\x80\x82\x83\x84\x85\x86\x87\x88\x89"
+        "\x8a\x8b\x8c\x8e\x91\x92\x93\x94\x95\x96\x97\x98\x99"
+        "\x9a\x9b\x9c\x9e\x9f\xa0\xe9";
+    static const char expected[] =
+        "\xe2\x82\xac\xe2\x80\x9a\xc6\x92\xe2\x80\x9e\xe2\x80\xa6"
+        "\xe2\x80\xa0\xe2\x80\xa1\xcb\x86\xe2\x80\xb0\xc5\xa0"
+        "\xe2\x80\xb9\xc5\x92\xc5\xbd\xe2\x80\x98\xe2\x80\x99"
+        "\xe2\x80\x9c\xe2\x80\x9d\xe2\x80\xa2\xe2\x80\x93\xe2\x80\x94"
+        "\xcb\x9c\xe2\x84\xa2\xc5\xa1\xe2\x80\xba\xc5\x93\xc5\xbe"
+        "\xc5\xb8\xc2\xa0\xc3\xa9";
+    char doc[512];
+    tiku_xml_t *x;
+
+    for (size_t i = 0; i < sizeof enc / sizeof enc[0]; i++) {
+        snprintf(doc, sizeof doc, "<?xml encoding='%s'?><a v='%s'>%s</a>",
+                 enc[i], bytes, bytes);
+        x = parse(doc, NULL, 0);
+        check(x && text_is(tiku_xml_root(x)->child, expected) &&
+              !strcmp(tiku_xml_attr(tiku_xml_root(x), "v"), expected),
+              "D-094", "Windows-1252 characters decode in text and attributes");
+        tiku_xml_free(x);
+    }
+    x = parse("<?xml encoding='ISO-8859-1'?><a>\x80\x93\x9f</a>", NULL, 0);
+    check(x && text_is(tiku_xml_root(x)->child, "\xc2\x80\xc2\x93\xc2\x9f"),
+          "D-094", "Latin-1 retains its C1 code points");
+    tiku_xml_free(x);
+    x = parse("<?xml encoding='cp1252'?><a>\x81\x8d\x8f\x90\x9d</a>", NULL, 0);
+    check(x && text_is(tiku_xml_root(x)->child,
+                       "\xc2\x81\xc2\x8d\xc2\x8f\xc2\x90\xc2\x9d"),
+          "D-094", "undefined Windows-1252 slots retain their C1 code points");
+    tiku_xml_free(x);
+    {
+        char many[1200], expected_many[3073];
+        size_t head = strlen("<?xml encoding='cp1252'?><a>");
+
+        memcpy(many, "<?xml encoding='cp1252'?><a>", head);
+        memset(many + head, 0x80, 1024);
+        memcpy(many + head + 1024, "</a>", 5);
+        for (int i = 0; i < 1024; i++)
+            memcpy(expected_many + 3 * i, "\xe2\x82\xac", 3);
+        expected_many[3072] = 0;
+        x = parse(many, NULL, 0);
+        check(x && text_is(tiku_xml_root(x)->child, expected_many),
+              "D-094", "Windows-1252 input can expand to three UTF-8 bytes each");
+        tiku_xml_free(x);
+    }
+}
+
 /** @brief Broken files: refused, with the line they broke on. */
 static void
 broken_tests(void)
@@ -386,6 +439,7 @@ main(void)
     entity_tests();
     text_tests();
     encoding_tests();
+    windows_encoding_tests();
     broken_tests();
     limit_tests();
     load_tests();

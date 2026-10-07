@@ -27,6 +27,7 @@
 
 #include "tiku_fontset.h"
 #include "tiku_office.h"
+#include "tiku_office_chart.h"
 #include "tiku_pdf.h"
 
 #include "../fixtures/office.inc"
@@ -562,6 +563,51 @@ export_tests(void)
     unlink(out);
 }
 
+/** @brief Axis positions are independent of date-axis time units. */
+static void
+axis_position_tests(void)
+{
+    static const char *kinds[] = {"catAx", "valAx", "dateAx"};
+    static const char *units[] = {"", "days", "months", "years"};
+    static const char *positions[] = {"b", "l", "t", "r", NULL,
+                                      "", "top", "x"};
+    size_t kind, unit, pos;
+
+    for (kind = 0; kind < 3; kind++) {
+        for (unit = 0; unit < 4; unit++) {
+            for (pos = 0; pos < sizeof positions / sizeof positions[0]; pos++) {
+                char xml[512], row[32];
+                dml_ctx_t context = {0};
+                ch_chart_t chart = {0};
+                tiku_xml_t *doc;
+
+                snprintf(xml, sizeof xml, "<c:chartSpace><c:chart>"
+                         "<c:plotArea><c:%s><c:axId val=\"1\"/>"
+                         "%s%s%s%s%s%s</c:%s>"
+                         "</c:plotArea></c:chart></c:chartSpace>",
+                         kinds[kind], positions[pos] ? "<c:axPos val=\"" : "",
+                         positions[pos] ? positions[pos] : "",
+                         positions[pos] ? "\"/>" : "",
+                         unit ? "<c:baseTimeUnit val=\"" : "", units[unit],
+                         unit ? "\"/>" : "", kinds[kind]);
+                doc = tiku_xml_parse(xml, strlen(xml), NULL, 0);
+                chart.c = &context;
+                snprintf(row, sizeof row, "OF-AX-%zu%zu%zu", kind, unit, pos);
+                check(doc != NULL &&
+                      ch_read_dml(&chart, tiku_xml_root(doc)) == 0 &&
+                      chart.nax == 1 &&
+                      chart.ax[0].pos == (pos < 4 ? positions[pos][0] : 'b') &&
+                      chart.ax[0].date == (kind == 2) &&
+                      chart.ax[0].kind == (kind == 1 ? CH_VAL_AX : CH_CAT_AX) &&
+                      chart.ax[0].time_unit == (unit > 1 ? (int)unit - 1 : 0),
+                      row, "axis side and time unit retain separate values");
+                of_arena_free(&chart.mem);
+                tiku_xml_free(doc);
+            }
+        }
+    }
+}
+
 /** @brief The scratch folder's files and the folder given back. */
 static void
 tidy(void)
@@ -589,6 +635,7 @@ main(void)
         return 1;
     }
     kind_tests();
+    axis_position_tests();
     if (tiku_fontset_count() > 0) {
         for (k = 0; k < (int)(sizeof fixtures / sizeof fixtures[0]); k++) {
             fixture_test(k);

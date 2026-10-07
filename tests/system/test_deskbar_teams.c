@@ -159,8 +159,10 @@ static void action_test(desktop_t *app, tiku_window_t *pdf)
            tiku_workspace_count(app->desk) == 3);
     app->remote.session[1].win[0].window = NULL;   /* the session let go */
     (void)pdf;
-    pick.team = app->team;          /* this shell's: no polite quit */
+    tiku_trk_deskbar_set_windows(app->deskbar, pick.team, NULL, 0, 0);
     assert(deskbar_pick_team(app, &pick, 0, 0) && forcequits == 1);
+    pick.team = app->team;          /* this shell's: no polite quit */
+    assert(deskbar_pick_team(app, &pick, 0, 0) && forcequits == 2);
 }
 
 /** @brief A row goes with its application's last window; this shell's

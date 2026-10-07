@@ -10,7 +10,15 @@ static uint32_t window_open(void *ctx, const char *title, int w, int h)
 static int window_frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
 { (void)ctx; (void)id; (void)px; (void)w; (void)h; return 1; }
 static int window_menu(void *ctx, uint32_t id, const tiku_menuset_t *menus)
-{ (void)ctx; (void)id; (void)menus; return 1; }
+{
+    (void)ctx; (void)id;
+    for (int i = 0; i < menus->menu[0].nitem; i++) {
+        if (menus->menu[0].item[i].sc) {
+            assert(menus->menu[0].item[i].mods == TIKU_MOD_CMD);
+        }
+    }
+    return 1;
+}
 static int copy(void *ctx, const char *text)
 { (void)ctx; snprintf(copied, sizeof copied, "%s", text); return 1; }
 

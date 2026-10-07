@@ -843,14 +843,12 @@ main(void)
         (void)tiku_trk_poseview_load_begin(v, t);
         (void)tiku_trk_poseview_load_step(v, t);       /* row one alone    */
         rows_first = tiku_trk_poseview_count(v);
-        /* Each later call arrives well past the batch deadline, so each
-         * publishes one batch and yields rather than draining the folder. */
+        /* A delayed call has a fresh work budget, not an expired one. */
         t += 10 * TIKU_TRK_LOAD_CHUNK_US;
         (void)tiku_trk_poseview_load_step(v, t);
         rows_second = tiku_trk_poseview_count(v);
-        check(rows_first == 1 && rows_second == 2, "PVN-047",
-              "a step that is already past its deadline publishes one batch "
-              "and yields, instead of draining the folder in one go");
+        check(rows_first == 1 && rows_second == 6, "D-038",
+              "a delayed step finishes this small folder within its own budget");
         while (tiku_trk_poseview_load_step(v, t)) {
             t += 10 * TIKU_TRK_LOAD_CHUNK_US;
         }

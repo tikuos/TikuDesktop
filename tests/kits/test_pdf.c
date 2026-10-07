@@ -1668,6 +1668,29 @@ corpus_test(void)
     printf("  corpus: %d of %d opened\n", opened, tried);
 }
 
+/** @brief PDFDocEncoding spacing marks survive text-string decoding. */
+static void
+spacing_marks_test(void)
+{
+    unsigned char bytes[] = {0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
+                              0x1d, 0x1e, 0x1f, 0x20, 0x80, 0xa0};
+    static const char expected[] = " \xcb\x98\xcb\x87\xcb\x86\xcb\x99"
+        "\xcb\x9d\xcb\x9b\xcb\x9a\xcb\x9c \xe2\x80\xa2\xe2\x82\xac";
+    pdf_obj_t value = {.kind = PDF_STRING};
+    unsigned char encoded[sizeof bytes];
+    char *text;
+
+    value.u.s.p = bytes;
+    value.u.s.n = sizeof bytes;
+    text = pdf_text_string(&value);
+    check(text && !strcmp(text, expected),
+          "D-093: spacing marks and adjacent PDFDocEncoding bytes decode");
+    check(text && pdf_docenc(text, encoded, sizeof encoded) == sizeof bytes &&
+          !memcmp(encoded + 1, bytes + 1, sizeof bytes - 1),
+          "D-093: spacing marks round-trip through PDFDocEncoding");
+    free(text);
+}
+
 int
 main(void)
 {
@@ -1684,6 +1707,7 @@ main(void)
     transp_test();
     knockout_test();
     nav_test();
+    spacing_marks_test();
     fax_test();
     oc_test();
     annot_test();

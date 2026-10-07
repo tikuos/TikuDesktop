@@ -9,9 +9,12 @@ note the mode switch behind us, a quiet stretch paints no pose at all
 draw-reset
 wait 20
 expect-drawn 0
-note selecting one icon paints one pose -- where it is, nothing else
+note a press darkens the icon under it, one pose painted; the release
+note then paints it selected, one pose again -- where it is, nothing else
+press 88 119
+wait 6
 draw-reset
-click 88 119
+release 88 119
 wait 6
 expect-drawn 2
 expect-drawn at-least 1

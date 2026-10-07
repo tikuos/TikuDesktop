@@ -152,7 +152,7 @@ main(void)
         char got[32];
 
         (void)tiku_desc_parse("u32,bytes,static,free", &d);
-        (void)tiku_attr_format(&d, "", got, sizeof got);
+        (void)tiku_attr_format(&d, NULL, got, sizeof got);
         check(strcmp(got, "-") == 0, "an unread node shows \"-\"");
         (void)tiku_attr_format(&d, "0", got, sizeof got);
         check(strcmp(got, "0 bytes") == 0, "a node that really reads 0 does not");

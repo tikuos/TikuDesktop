@@ -65,8 +65,12 @@ main(void)
         check(tiku_trk_deskbar_add_replicant(first, "answer", path) > 0,
               "DB-039", "adding a replicant records it in the store");
         tiku_trk_deskbar_set_store(second, store);
+        check(tiku_trk_deskbar_set_replicant_height(first, path, 7),
+              "D-075", "replicant accepts a custom height");
         check(tiku_trk_deskbar_load_replicants(second) == 1,
               "DB-039", "a new Deskbar restores the saved replicant");
+        check(tiku_trk_deskbar_replicant_height(second, path) == 7,
+              "D-075", "custom replicant height survives reload");
         check(tiku_trk_deskbar_remove_replicant(second, path) == 1,
               "DB-040", "removing a replicant updates the live tray");
         check(tiku_trk_deskbar_load_replicants(first) == 0, "DB-040",

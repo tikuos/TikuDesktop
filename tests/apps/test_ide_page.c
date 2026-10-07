@@ -24,13 +24,18 @@
 static const char *selected = "";
 static int runs, refuse_clip;
 static char run_program[8192], desk_clip[4096];
+static unsigned menu_publications[512];
 
 static int current(void *ctx, char *out, size_t max)
 { (void)ctx; return snprintf(out, max, "%s", selected); }
 static int names(void *ctx, char *out, size_t max)
 { (void)ctx; return snprintf(out, max, "board-a\n"); }
 static int menus(void *ctx, uint32_t id, const tiku_menuset_t *set)
-{ (void)ctx; (void)id; (void)set; return 0; }
+{
+    (void)ctx; (void)set;
+    if (id < 512) menu_publications[id]++;
+    return 0;
+}
 static int frame(void *ctx, uint32_t id, const uint32_t *px, int w, int h)
 { (void)ctx; (void)id; (void)px; (void)w; (void)h; return 0; }
 static uint32_t opened(void *ctx, const char *title, int w, int h)
@@ -909,7 +914,31 @@ static void page_scrollbar(ide_t *st)
     unpage(st, e);
 }
 
-int main(void)
+static void splash_events(ide_t *st)
+{
+    st->splash_id = 499;
+    st->splash_surface = tiku_surface_new(100, 100, 0);
+    const int types[] = {TIKU_EVENT_POINTER_MOVE, TIKU_EVENT_POINTER_UP,
+                        TIKU_EVENT_WHEEL, TIKU_EVENT_RESIZE, TIKU_EVENT_KEY_UP};
+    for (unsigned i = 0; i < sizeof types / sizeof types[0]; i++) {
+        tiku_event_t ev = {.type = types[i], .key = TIKU_KEY_SHIFT};
+        tiku_ide_event(st, 499, &ev);
+        assert(st->splash_surface != NULL);
+    }
+    tiku_event_t ev = {.type = TIKU_EVENT_POINTER_DOWN};
+    tiku_ide_event(st, 499, &ev);
+    assert(st->splash_surface == NULL);
+}
+static void page_menus(ide_t *st)
+{
+    edit_t *a = page(st, "menus-a.bas", "10 END\n", 7);
+    unsigned before = menu_publications[a->id];
+    edit_t *b = page(st, "menus-b.bas", "10 END\n", 7);
+    assert(menu_publications[a->id] > before);
+    tiku_ide_edit_drop(st, b);
+    tiku_ide_edit_drop(st, a);
+}
+int main(int argc, char **argv)
 {
     char drafts[600];
     ide_t *st;
@@ -919,6 +948,11 @@ int main(void)
     assert(mkdir(drafts, 0700) == 0);
     assert(setenv("TIKU_IDE_RECOVERY_DIR", drafts, 1) == 0);
     st = ide();
+    if (argc > 1 && !strcmp(argv[1], "splash")) {
+        splash_events(st);
+    } else if (argc > 1 && !strcmp(argv[1], "menus")) {
+        page_menus(st);
+    } else {
     kept_bytes(st);
     basic_limits(st);
     breakpoints(st);
@@ -933,6 +967,9 @@ int main(void)
     jumps(st);
     return_over_selection(st);
     page_scrollbar(st);
+    splash_events(st);
+    page_menus(st);
+    }
     tiku_surface_free(st->proj_surface);
     tiku_surface_free(st->msg_surface);
     tiku_surface_free(st->con_surface);
