@@ -5,9 +5,11 @@
 # listening as it does for a board that dials over IP: the drawing road
 # rides the BLE link and the forms road, which is the shell's text, does
 # not come with it.  This needs the board on the cable flashed with
-# TIKU_FLPR_ENABLE=1 TIKU_LINK_BLE_ENABLE=1 TIKU_APPL_GUI=1
-# TIKU_APPL_GUI_BLE=1 TIKU_APPL_DRAW_DEMO=1, and the harness tells it to
-# advertise and carries its link here (see run.sh's ble lane).
+# TIKU_LINK_BLE_ENABLE=1 TIKU_APPL_GUI=1 TIKU_APPL_GUI_BLE=1
+# TIKU_APPL_DRAW_DEMO=1, plus TIKU_FLPR_ENABLE=1 on an nRF54L or
+# TIKU_AMBIQ_POWER_PROBE=0 on the Apollo510B (for room), and the harness
+# tells it to advertise and carries its link here (see run.sh's ble lane:
+# BlueZ on Linux, tikuConsole's ble_relay on macOS).
 wait 900
 note the board's window is on the desktop, beside the fixture's folder
 expect-windows 2

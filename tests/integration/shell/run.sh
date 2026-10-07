@@ -50,6 +50,13 @@ fails=0
 # harness pointed at it fails rather than passing quietly).  The
 # single-window TikuTracker exists only here, under build/dev/.
 devbin="$top/build/dev"
+# The ble lane's relay carries the board's BLE link to the listening desktop:
+# TikuBench's BlueZ client on Linux, tikuConsole's CoreBluetooth one on macOS
+# (make -C ../tikuConsole/mac ble_relay).
+blerelay=""
+if [ "$(uname)" = Darwin ]; then
+    blerelay="$top/../tikuConsole/mac/ble_relay"
+fi
 
 # Scripts that are also run through the OUT-OF-PROCESS driver, against the
 # shipping shell.  Keep this list to scripts written in the subset
@@ -227,7 +234,13 @@ for s in "$here"/*.script; do
         if grep -q '^# board: ble' "$s"; then
             boardble=yes
             boardonly=yes
-            if [ -z "${TRK_PORT:-}" ] ||
+            if [ -z "${TRK_PORT:-}" ]; then
+                continue
+            fi
+            if [ -n "$blerelay" ] && [ ! -x "$blerelay" ]; then
+                continue
+            fi
+            if [ -z "$blerelay" ] &&
                [ ! -f "$top/../TikuBench/tikubench/core/ble_peer.py" ]; then
                 continue
             fi
@@ -633,9 +646,16 @@ for s in "$here"/*.script; do
             printf '\n== %s (%s, board over the air)\n' "$(basename "$s")" "$bin"
             rm -rf "$deskhome"/.local/share/tracker/devices/*.state
             printf 'write /gui/desk off\r\nwrite /gui/desk ble\r\n' > "$TRK_PORT"
-            PYTHONPATH="$top/../TikuBench" python3 -m tikubench.core.ble_peer \
-                --name TIKU-DESK --to 127.0.0.1:7749 --discover-wait 120 \
-                --verbose > "$tmp/trk_boardble_relay.log" 2>&1 &
+            if [ -n "$blerelay" ]; then
+                "$blerelay" --name TIKU-DESK --to 127.0.0.1:7749 \
+                    --discover-wait 120 --verbose \
+                    > "$tmp/trk_boardble_relay.log" 2>&1 &
+            else
+                PYTHONPATH="$top/../TikuBench" \
+                    python3 -m tikubench.core.ble_peer \
+                    --name TIKU-DESK --to 127.0.0.1:7749 --discover-wait 120 \
+                    --verbose > "$tmp/trk_boardble_relay.log" 2>&1 &
+            fi
             relay=$!
             DISPLAY= HOME="$deskhome" \
                 env ${lang:+TIKU_LANG=$lang} ${langdir:+TIKU_STRINGS=$langdir} \
