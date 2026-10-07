@@ -108,8 +108,190 @@ expand_due(const tiku_fs_t *fs)
 }
 
 /**
- * @brief Process one queued item.
- *
+ * @brief Delete the item at the cursor: a directory's children are queued
+ *        ahead of it and the directory is visited again after them.
+ * @return 1 to go on with the queue, 0 when the job stopped on a
+ *         question: a device node or a failed removal.
+ */
+static int
+step_delete(tiku_fs_t *fs)
+{
+    const char *src = fs->queue[fs->qcursor];
+
+    if (fop_on_device(fs, src)) {
+        /*
+         * The backend ops remove nothing, so a device node cannot be
+         * trashed or deleted; unlink() on its namespace path would
+         * only report ENOENT.  The refusal names the limit and can be
+         * continued past, so the rest of a queue that spans a board
+         * and the disk still goes.
+         */
+        char msg[240];
+
+        snprintf(msg, sizeof msg,
+                 "\"%.60s\" is on a device: the connection can read "
+                 "and write its nodes, but not remove them.",
+                 fop_leaf_of(src));
+        return fail_ask(fs, msg, 1);
+    } else if (fop_is_dir(src) && expand_due(fs)) {
+        /* A folder goes children first: each child is queued as an
+         * item of its own in the processed slots before the folder,
+         * and the folder stays in its slot for a second visit after
+         * them, so a child that cannot go is reported by name and its
+         * siblings still go (FS-049).  Children that do not fit wait
+         * for the next round, which the second visit starts. */
+        DIR *d;
+        int slot, more = 0;
+
+        if (fs->qcount < FS_QUEUE_MAX) {
+            /* The items still to run move to the end of the queue,
+             * leaving every slot before them free. */
+            int live = fs->qcount - fs->qcursor;
+            int at = FS_QUEUE_MAX - live;
+
+            memmove(fs->queue[at], fs->queue[fs->qcursor],
+                    (size_t)live * sizeof fs->queue[0]);
+            memmove(&fs->qexpanded[at], &fs->qexpanded[fs->qcursor],
+                    (size_t)live);
+            memmove(&fs->qdone[at], &fs->qdone[fs->qcursor],
+                    (size_t)live * sizeof fs->qdone[0]);
+            fs->qcursor = at;
+            fs->qcount = FS_QUEUE_MAX;
+            src = fs->queue[at];
+        }
+        slot = fs->qcursor;
+        d = opendir(src);
+        if (d != NULL) {
+            struct dirent *e;
+
+            while ((e = readdir(d)) != NULL) {
+                if (strcmp(e->d_name, ".") == 0 ||
+                    strcmp(e->d_name, "..") == 0) {
+                    continue;
+                }
+                if (slot == 0) {
+                    more = 1;
+                    break;
+                }
+                if (fop_join(fs->queue[slot - 1], TIKU_PATH_MAX,
+                         src, e->d_name) == 0) {
+                    slot--;
+                    fs->qexpanded[slot] = 0;
+                }
+            }
+            (void)closedir(d);
+        }
+        if (slot < fs->qcursor) {
+            /* The children and the folder's second visit. */
+            fs->prog.total += fs->qcursor - slot + 1;
+            fs->qexpanded[fs->qcursor] = more ? 2 : 1;
+            fs->qdone[fs->qcursor] = fs->prog.done;
+            fs->qcursor = slot;
+            return 1;
+        }
+        /* Nothing inside (or no room to expand): fall through to the
+         * straight attempt below by treating it as visited. */
+        goto delete_attempt;
+    } else {
+delete_attempt:
+        if (remove(src) != 0) {
+            if (errno == ENOTEMPTY || errno == EEXIST) {
+                /* While a descendant is still queued, the folder goes
+                 * to the back of the queue: it can only be empty after
+                 * them. */
+                size_t plen = strlen(src);
+                int k;
+
+                for (k = fs->qcursor + 1; k < fs->qcount; k++) {
+                    if (strncmp(fs->queue[k], src, plen) == 0 &&
+                        fs->queue[k][plen] == '/') {
+                        break;
+                    }
+                }
+                if (k < fs->qcount && fs->qcount < FS_QUEUE_MAX) {
+                    fs->qexpanded[fs->qcount] = 1;
+                    snprintf(fs->queue[fs->qcount], TIKU_PATH_MAX,
+                             "%s", src);
+                    fs->qcount++;
+                    fs->prog.total = fs->qcount;
+                    fs->qcursor++;
+                    return 1;
+                }
+            }
+            /* The dialog names the leaf, which is what was
+             * selected. */
+            char msg[240];
+
+            snprintf(msg, sizeof msg,
+                     "Error deleting \"%.60s\": %.150s.",
+                     fop_leaf_of(src), strerror(errno));
+            return fail_ask(fs, msg, 0);
+        }
+        fs->prog.done++;
+    }
+    fs->qcursor++;
+    return 1;
+}
+
+/**
+ * @brief Link the item at the cursor into fs->dst, relative when
+ *        fs->link_relative and both ends share a device.
+ * @return 1 when the item is done, 0 when the job stopped on a question:
+ *         the link could not be made.
+ */
+static int
+step_link(tiku_fs_t *fs)
+{
+    const char *src = fs->queue[fs->qcursor];
+    char name[TIKU_NAME_MAX], dstpath[TIKU_PATH_MAX];
+
+    char target[TIKU_PATH_MAX];
+    struct stat ss, ds;
+
+    /* "<name> link" only when the plain name is taken, so linking into
+     * another folder keeps the original name (FS-009). */
+    if (tiku_fs_link_name(fs, fs->dst,
+                          fs->link_as[0] != '\0' ? fs->link_as
+                                                  : fop_leaf_of(src),
+                          name, sizeof name) != 0 ||
+        fop_join(dstpath, sizeof dstpath, fs->dst, name) != 0) {
+        fs->prog.failed++;
+        fs->qcursor++;
+        return 1;
+    }
+    snprintf(target, sizeof target, "%s", src);
+    if (fs->link_relative && stat(src, &ss) == 0 &&
+        stat(fs->dst, &ds) == 0 && ss.st_dev == ds.st_dev) {
+        char rel[TIKU_PATH_MAX];
+
+        /* A relative link is made only when source and destination
+         * share a device and a relative path can be built; otherwise
+         * the link is absolute (FS-010). */
+        if (relative_path(fs->dst, src, rel, sizeof rel) == 0) {
+            snprintf(target, sizeof target, "%s", rel);
+        }
+    }
+    if (symlink(target, dstpath) != 0) {
+        char msg[240];
+
+        /* EPERM or ENOSYS means the disk takes no links, and the
+         * message says so (FS-011). */
+        snprintf(msg, sizeof msg, "%s",
+                 (errno == EPERM || errno == ENOSYS)
+                     ? "The target disk does not support creating links."
+                     : "Error creating link.");
+        return fail_ask(fs, msg, 1);
+    }
+    fop_undo_push(fs, dstpath, src, 1);
+    fs->prog.done++;
+    fs->qcursor++;
+    return 1;
+}
+
+/**
+ * @brief Process one queued item: trash, delete and link go to
+ *        step_delete() and step_link(); copy, move and duplicate are
+ *        done here.
  * @return 1 when the item is done or the job ends, 0 when the job stopped
  *         on a question: a collision or an error.
  */
@@ -167,166 +349,10 @@ step_one(tiku_fs_t *fs)
         return 1;
         }
     }
-    if (fs->prog.op == TIKU_OP_TRASH ||
-        fs->prog.op == TIKU_OP_DELETE) {
-        if (fop_on_device(fs, src)) {
-            /*
-             * The backend ops remove nothing, so a device node cannot be
-             * trashed or deleted; unlink() on its namespace path would
-             * only report ENOENT.  The refusal names the limit and can be
-             * continued past, so the rest of a queue that spans a board
-             * and the disk still goes.
-             */
-            char msg[240];
+    if (fs->prog.op == TIKU_OP_TRASH || fs->prog.op == TIKU_OP_DELETE)
+        return step_delete(fs);
 
-            snprintf(msg, sizeof msg,
-                     "\"%.60s\" is on a device: the connection can read "
-                     "and write its nodes, but not remove them.",
-                     fop_leaf_of(src));
-            return fail_ask(fs, msg, 1);
-        } else if (fop_is_dir(src) && expand_due(fs)) {
-            /* A folder goes children first: each child is queued as an
-             * item of its own in the processed slots before the folder,
-             * and the folder stays in its slot for a second visit after
-             * them, so a child that cannot go is reported by name and its
-             * siblings still go (FS-049).  Children that do not fit wait
-             * for the next round, which the second visit starts. */
-            DIR *d;
-            int slot, more = 0;
-
-            if (fs->qcount < FS_QUEUE_MAX) {
-                /* The items still to run move to the end of the queue,
-                 * leaving every slot before them free. */
-                int live = fs->qcount - fs->qcursor;
-                int at = FS_QUEUE_MAX - live;
-
-                memmove(fs->queue[at], fs->queue[fs->qcursor],
-                        (size_t)live * sizeof fs->queue[0]);
-                memmove(&fs->qexpanded[at], &fs->qexpanded[fs->qcursor],
-                        (size_t)live);
-                memmove(&fs->qdone[at], &fs->qdone[fs->qcursor],
-                        (size_t)live * sizeof fs->qdone[0]);
-                fs->qcursor = at;
-                fs->qcount = FS_QUEUE_MAX;
-                src = fs->queue[at];
-            }
-            slot = fs->qcursor;
-            d = opendir(src);
-            if (d != NULL) {
-                struct dirent *e;
-
-                while ((e = readdir(d)) != NULL) {
-                    if (strcmp(e->d_name, ".") == 0 ||
-                        strcmp(e->d_name, "..") == 0) {
-                        continue;
-                    }
-                    if (slot == 0) {
-                        more = 1;
-                        break;
-                    }
-                    if (fop_join(fs->queue[slot - 1], TIKU_PATH_MAX,
-                             src, e->d_name) == 0) {
-                        slot--;
-                        fs->qexpanded[slot] = 0;
-                    }
-                }
-                (void)closedir(d);
-            }
-            if (slot < fs->qcursor) {
-                /* The children and the folder's second visit. */
-                fs->prog.total += fs->qcursor - slot + 1;
-                fs->qexpanded[fs->qcursor] = more ? 2 : 1;
-                fs->qdone[fs->qcursor] = fs->prog.done;
-                fs->qcursor = slot;
-                return 1;
-            }
-            /* Nothing inside (or no room to expand): fall through to the
-             * straight attempt below by treating it as visited. */
-            goto delete_attempt;
-        } else {
-delete_attempt:
-            if (remove(src) != 0) {
-                if (errno == ENOTEMPTY || errno == EEXIST) {
-                    /* While a descendant is still queued, the folder goes
-                     * to the back of the queue: it can only be empty after
-                     * them. */
-                    size_t plen = strlen(src);
-                    int k;
-
-                    for (k = fs->qcursor + 1; k < fs->qcount; k++) {
-                        if (strncmp(fs->queue[k], src, plen) == 0 &&
-                            fs->queue[k][plen] == '/') {
-                            break;
-                        }
-                    }
-                    if (k < fs->qcount && fs->qcount < FS_QUEUE_MAX) {
-                        fs->qexpanded[fs->qcount] = 1;
-                        snprintf(fs->queue[fs->qcount], TIKU_PATH_MAX,
-                                 "%s", src);
-                        fs->qcount++;
-                        fs->prog.total = fs->qcount;
-                        fs->qcursor++;
-                        return 1;
-                    }
-                }
-                /* The dialog names the leaf, which is what was
-                 * selected. */
-                char msg[240];
-
-                snprintf(msg, sizeof msg,
-                         "Error deleting \"%.60s\": %.150s.",
-                         fop_leaf_of(src), strerror(errno));
-                return fail_ask(fs, msg, 0);
-            }
-            fs->prog.done++;
-        }
-        fs->qcursor++;
-        return 1;
-    }
-
-    if (fs->prog.op == TIKU_OP_LINK) {
-        char target[TIKU_PATH_MAX];
-        struct stat ss, ds;
-
-        /* "<name> link" only when the plain name is taken, so linking into
-         * another folder keeps the original name (FS-009). */
-        if (tiku_fs_link_name(fs, fs->dst,
-                              fs->link_as[0] != '\0' ? fs->link_as
-                                                      : fop_leaf_of(src),
-                              name, sizeof name) != 0 ||
-            fop_join(dstpath, sizeof dstpath, fs->dst, name) != 0) {
-            fs->prog.failed++;
-            fs->qcursor++;
-            return 1;
-        }
-        snprintf(target, sizeof target, "%s", src);
-        if (fs->link_relative && stat(src, &ss) == 0 &&
-            stat(fs->dst, &ds) == 0 && ss.st_dev == ds.st_dev) {
-            char rel[TIKU_PATH_MAX];
-
-            /* A relative link is made only when source and destination
-             * share a device and a relative path can be built; otherwise
-             * the link is absolute (FS-010). */
-            if (relative_path(fs->dst, src, rel, sizeof rel) == 0) {
-                snprintf(target, sizeof target, "%s", rel);
-            }
-        }
-        if (symlink(target, dstpath) != 0) {
-            char msg[240];
-
-            /* EPERM or ENOSYS means the disk takes no links, and the
-             * message says so (FS-011). */
-            snprintf(msg, sizeof msg, "%s",
-                     (errno == EPERM || errno == ENOSYS)
-                         ? "The target disk does not support creating links."
-                         : "Error creating link.");
-            return fail_ask(fs, msg, 1);
-        }
-        fop_undo_push(fs, dstpath, src, 1);
-        fs->prog.done++;
-        fs->qcursor++;
-        return 1;
-    }
+    if (fs->prog.op == TIKU_OP_LINK) return step_link(fs);
     if (fs->prog.op == TIKU_OP_DUPLICATE) {
         /* Each item duplicates into its own parent, even when the
          * selection spans folders (FS-008). */

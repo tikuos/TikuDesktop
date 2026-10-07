@@ -212,6 +212,8 @@ typedef struct {
     unsigned char *buf;
     size_t         got, want;
     uint32_t       cur_type;
+    struct tiku_conduct_notice *pending_head, *pending_tail;
+    unsigned       pending_count;
 } tiku_conduct_client_t;
 
 /** @brief Connect to the shell's socket at @p path, retrying every 20 ms

@@ -311,8 +311,8 @@ static int ob_durable(int dir, const tiku_config_pending_t *p)
  */
 static int ob_resolve(tiku_backend_t *b, tiku_config_pending_t *p)
 {
-    tiku_config_snapshot_t probe, wanted, current, after;
-    char token[33], value[33], history[768], *line, *end;
+    tiku_config_snapshot_t probe, wanted, current;
+    char token[33], value[33], history[768], *line;
     int match = 0, conflict = 0, count = 0;
     if (tiku_config_probe(b, &probe) < 0)
         return ob_result(p, TIKU_CONFIG_PENDING_ERROR, "Recovery state unavailable. Local request retained.");
@@ -328,15 +328,15 @@ static int ob_resolve(tiku_backend_t *b, tiku_config_pending_t *p)
         return ob_result(p, TIKU_CONFIG_PENDING_OBSOLETE, "Device recovery identity changed. This old request cannot be retried.");
     if (tiku_config_read(b, p->path, &current) != 1 ||
         ob_read(b, "/sys/config/history", history, sizeof history) < 0 ||
-        tiku_config_probe(b, &after) != 1 ||
-        strcmp(after.incarnation, wanted.incarnation) ||
+        tiku_config_probe(b, &probe) != 1 ||
+        strcmp(probe.incarnation, wanted.incarnation) ||
         strcmp(current.incarnation, wanted.incarnation))
         return ob_result(p, TIKU_CONFIG_PENDING_ERROR, "Could not check device receipts. Local request retained.");
     line = history;
     while (*line) {
         char wire[160], receipt_token[33];
         tiku_config_snapshot_t receipt;
-        end = strchr(line, '\n');
+        char *end = strchr(line, '\n');
         /* The session trims the reply's trailing newline, so the last
          * line ends at the terminator. */
         if (++count > 4) goto malformed;

@@ -9,7 +9,7 @@
  *
  * The format is the Adobe Type 1 Font Format book: a clear text head
  * (FontMatrix, Encoding), then eexec-encrypted PostScript holding the
- * Subrs and CharStrings, each charstring encrypted once more.  The
+ * Subrs and CharStrings. Charstrings are encrypted unless lenIV is -1. The
  * charstring machine is Type 1's: numbers, a dozen drawing operators,
  * subroutines, flex and hint replacement through "othersubrs", and
  * accents through seac.
@@ -20,6 +20,7 @@
 #include "tiku_type1.h"
 #include "tiku_cff_strings.inl"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -175,7 +176,7 @@ read_head(tiku_t1_t *t, const unsigned char *p, size_t n)
 
 /* ------------------------------------------------------------ the body  */
 
-/** @brief A decimal integer at @p i, with @p i moved past it. */
+/** @brief Read a decimal integer; return LONG_MIN on invalid input or overflow. */
 static long
 integer(const unsigned char *p, size_t n, size_t *i)
 {
@@ -184,14 +185,17 @@ integer(const unsigned char *p, size_t n, size_t *i)
     while (*i < n && is_ws(p[*i])) {
         (*i)++;
     }
-    if (*i < n && p[*i] == '-') {
-        sign = -1;
+    if (*i < n && (p[*i] == '-' || p[*i] == '+')) {
+        sign = p[*i] == '-' ? -1 : 1;
         (*i)++;
     }
     if (*i >= n || p[*i] < '0' || p[*i] > '9') {
-        return -1;
+        return LONG_MIN;
     }
     while (*i < n && p[*i] >= '0' && p[*i] <= '9') {
+        if (v > (LONG_MAX - (p[*i] - '0')) / 10) {
+            return LONG_MIN;
+        }
         v = v * 10 + (p[*i] - '0');
         (*i)++;
     }
@@ -213,15 +217,14 @@ past_rd(const unsigned char *p, size_t n, size_t *i)
     }
 }
 
-/** @brief A charstring's bytes, decrypted, past their lenIV. */
+/** @brief Copy a charstring; lenIV -1 is plaintext, otherwise decrypt and skip. */
 static unsigned char *
 charstring(const unsigned char *p, size_t len, int leniv, size_t *out_len)
 {
     unsigned char *c;
+    size_t prefix = leniv < 0 ? 0 : (size_t)leniv;
 
-    if (leniv < 0) {
-        leniv = 0;
-    } else if ((size_t)leniv > len) {
+    if (prefix > len) {
         return NULL;
     }
     c = malloc(len ? len : 1);
@@ -229,11 +232,11 @@ charstring(const unsigned char *p, size_t len, int leniv, size_t *out_len)
         return NULL;
     }
     memcpy(c, p, len);
-    if (leniv > 0 || len > 0) {
+    if (leniv >= 0) {
         decrypt(c, len, 4330);
     }
-    *out_len = len - (size_t)leniv;
-    memmove(c, c + leniv, *out_len);
+    *out_len = len - prefix;
+    memmove(c, c + prefix, *out_len);
     return c;
 }
 
@@ -246,8 +249,14 @@ read_body(tiku_t1_t *t, const unsigned char *p, size_t n)
     size_t i;
 
     if (at >= 0) {
+        long value;
+
         i = (size_t)at + 6;
-        leniv = (int)integer(p, n, &i);
+        value = integer(p, n, &i);
+        if (value >= -1 && value <= INT_MAX &&
+            (i == n || is_ws(p[i]) || strchr("()<>[]{}/%", p[i]) != NULL)) {
+            leniv = (int)value;
+        }
     }
     at = find(p, n, 0, "/Subrs");
     if (at >= 0) {

@@ -64,9 +64,9 @@ open_regex(regex_scan_t *r, tiku_editdoc_t *doc, const tiku_edit_query_t *q)
     char *pattern;
 
     memset(r, 0, sizeof *r);
-    if (doc == NULL || q == NULL || q->text == NULL)
+    if (doc == NULL || q == NULL)
         return TIKU_EDIT_INVALID;
-    if (q->length == 0 || q->length >= INT_MAX ||
+    if (q->text == NULL || q->length == 0 || q->length >= INT_MAX ||
         !tiku_ed_utf8_valid(q->text, q->length) ||
         memchr(q->text, '\r', q->length) != NULL ||
         memchr(q->text, '\n', q->length) != NULL)

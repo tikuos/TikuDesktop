@@ -332,7 +332,7 @@ tiku_ns_events(tiku_ns_t *ns, tiku_ns_change_t *out, int max,
 
             if (sscanf(line, "# %u drained, %u dropped", &drained, &d) == 2 &&
                 dropped != NULL) {
-                *dropped = d;
+                *dropped += d;
             }
             continue;
         }

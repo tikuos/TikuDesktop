@@ -257,13 +257,40 @@ tiku_conduct_adopt(tiku_conduct_t *c, int fd, void *ctx,
     return 0;
 }
 
+/** @brief Map standard serial rates; zero requires the host-specific driver. */
+static speed_t
+conduct_speed(int baud)
+{
+    switch (baud) {
+    case 1200: return B1200;
+    case 2400: return B2400;
+    case 4800: return B4800;
+    case 9600: return B9600;
+    case 19200: return B19200;
+    case 38400: return B38400;
+    case 57600: return B57600;
+    case 115200: return B115200;
+    case 230400: return B230400;
+#ifdef B460800
+    case 460800: return B460800;
+#endif
+#ifdef B921600
+    case 921600: return B921600;
+#endif
+#ifdef B1000000
+    case 1000000: return B1000000;
+#endif
+    default: return 0;
+    }
+}
+
 int
 tiku_conduct_open_tty(const char *path, int baud)
 {
     struct termios tio;
     int fd;
 
-    if (path == NULL) {
+    if (path == NULL || baud < 0) {
         return -1;
     }
     fd = open(path, O_RDWR | O_NOCTTY);
@@ -278,33 +305,28 @@ tiku_conduct_open_tty(const char *path, int baud)
          * made nonblocking (set_nonblock()) before it is read, and its
          * EAGAIN is not end-of-file. */
         if (baud > 0) {
-            speed_t sp = (baud == 9600)     ? B9600
-                       : (baud == 19200)    ? B19200
-                       : (baud == 38400)    ? B38400
-                       : (baud == 57600)    ? B57600
-                       : (baud == 230400)   ? B230400
-                       : (baud == 460800)   ? B460800
-                       : (baud == 921600)   ? B921600
-                                            : B115200;
-
-            (void)cfsetispeed(&tio, sp);
-            (void)cfsetospeed(&tio, sp);
-            if (tcsetattr(fd, TCSANOW, &tio) != 0) {
-                /* The rate was refused: the serial driver is asked to set
-                 * it (tiku_sys_serial_speed()), and where that cannot help
-                 * the line is left as it was found. */
-                (void)tiku_sys_serial_speed(fd, baud);
-            } else if (tcgetattr(fd, &tio) == 0 &&
-                       cfgetospeed(&tio) != sp) {
-                /* Accepted but not applied: the line runs at another rate,
-                 * so the serial driver is asked to set it. */
-                (void)tiku_sys_serial_speed(fd, baud);
+            speed_t sp = conduct_speed(baud);
+            if (sp && (cfsetispeed(&tio, sp) != 0 ||
+                       cfsetospeed(&tio, sp) != 0)) {
+                close(fd);
+                return -1;
+            }
+            if (tcsetattr(fd, TCSANOW, &tio) != 0 ||
+                tcgetattr(fd, &tio) != 0) {
+                close(fd);
+                return -1;
+            }
+            if ((!sp || cfgetospeed(&tio) != sp || cfgetispeed(&tio) != sp) &&
+                tiku_sys_serial_speed(fd, baud) != 0) {
+                close(fd);
+                return -1;
             }
             return fd;
         }
-        (void)tcsetattr(fd, TCSANOW, &tio);
+        if (tcsetattr(fd, TCSANOW, &tio) == 0) return fd;
     }
-    return fd;
+    close(fd);
+    return -1;
 }
 
 void
@@ -616,6 +638,12 @@ tiku_conduct_poll(tiku_conduct_t *c)
 /* THE DRIVER'S SIDE                                                         */
 /*---------------------------------------------------------------------------*/
 
+/** @brief A watch notice retained while a query waits for its answer. */
+struct tiku_conduct_notice {
+    struct tiku_conduct_notice *next;
+    unsigned char *payload;
+};
+
 /** @brief Free the frame @p c holds and set it to read a header next. */
 static void
 client_drop_frame(tiku_conduct_client_t *c)
@@ -708,6 +736,14 @@ tiku_conduct_disconnect(tiku_conduct_client_t *c)
     }
     if (c != NULL) {
         client_drop_frame(c);
+        while (c->pending_head) {
+            struct tiku_conduct_notice *n = c->pending_head;
+            c->pending_head = n->next;
+            free(n->payload);
+            free(n);
+        }
+        c->pending_tail = NULL;
+        c->pending_count = 0;
     }
 }
 
@@ -782,7 +818,22 @@ tiku_conduct_query(tiku_conduct_client_t *c, uint32_t what,
             client_drop_frame(c);
             return ok;
         }
-        client_drop_frame(c);   /* another frame: dropped, keep waiting */
+        if (c->cur_type == TIKU_CMSG_TOLD &&
+            c->want >= TIKU_CONDUCT_ARG + TIKU_CONDUCT_TEXT) {
+            struct tiku_conduct_notice *n = c->pending_count < 256
+                ? calloc(1, sizeof *n) : NULL;
+            if (n == NULL) {
+                tiku_conduct_disconnect(c);
+                return 0;
+            }
+            n->payload = c->buf;
+            c->buf = NULL;
+            if (c->pending_tail) c->pending_tail->next = n;
+            else c->pending_head = n;
+            c->pending_tail = n;
+            c->pending_count++;
+        }
+        client_drop_frame(c);
     }
     return 0;                   /* it never answered */
 }
@@ -802,6 +853,19 @@ tiku_conduct_told(tiku_conduct_client_t *c, char *name,
     }
     if (text != NULL && text_max > 0u) {
         text[0] = '\0';
+    }
+    if (c->pending_head) {
+        struct tiku_conduct_notice *n = c->pending_head;
+        if (name && name_max) snprintf(name, name_max, "%.*s",
+            TIKU_CONDUCT_ARG, (char *)n->payload);
+        if (text && text_max) snprintf(text, text_max, "%.*s",
+            TIKU_CONDUCT_TEXT, (char *)n->payload + TIKU_CONDUCT_ARG);
+        c->pending_head = n->next;
+        if (!c->pending_head) c->pending_tail = NULL;
+        c->pending_count--;
+        free(n->payload);
+        free(n);
+        return 1;
     }
     /* Nothing is sent: the QUERY that set the watch arranged the telling,
      * and this only listens, for at most wait_ms. */

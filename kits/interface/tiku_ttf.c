@@ -893,6 +893,7 @@ open_tables(tiku_ttf_t *t, const char *path, unsigned face)
     }
     read_family(t, name);
     read_cmap(t, cmap);
+    measure_zones(t);
     if (t->family[0] == '\0' && path != NULL) {
         const char *leaf = strrchr(path, '/');
 
@@ -1108,7 +1109,6 @@ int
 tiku_ttf_render(const tiku_ttf_t *ttf, unsigned cp, int px,
                      tiku_ttf_glyph_t *out)
 {
-    static ttf_outline_t outline;       /* 48 KB: not on the stack */
     tiku_hint_t hint;
     tiku_path_t *path;
     unsigned g;
@@ -1126,14 +1126,6 @@ tiku_ttf_render(const tiku_ttf_t *ttf, unsigned cp, int px,
     scale = (float)px / (float)ttf->upem;
     out->adv = (int)((float)advance_of(ttf, g) * scale + 0.5f);
 
-    if (ttf->cff == NULL) {
-        outline.n = 0;
-        outline.contours = 0;
-        if (!read_outline(ttf, g, &outline, 0.0f, 0.0f, 0) ||
-            outline.n == 0) {
-            return 1;           /* a space: an advance and no ink */
-        }
-    }
     path = tiku_path_new();
     if (path == NULL) {
         return 0;
@@ -1150,7 +1142,10 @@ tiku_ttf_render(const tiku_ttf_t *ttf, unsigned cp, int px,
         }
     } else {
         build_hint((tiku_ttf_t *)ttf, scale, &hint);
-        emit_outline(path, &outline, &hint);
+        if (!tiku_ttf_outline(ttf, g, &hint, path)) {
+            tiku_path_free(path);
+            return 0;
+        }
     }
     tiku_path_bounds(path, &x0, &y0, &w, &h);
     if (tiku_path_failed(path) || w <= 0 || h <= 0) {

@@ -419,15 +419,14 @@ id_of(const unsigned char *p)
     return id;
 }
 
-/** @brief Apply one complete message to its session.
- *  @return nonzero when a window changed, -1 to drop the session. */
+/** @brief A HELLO: take the client's name and features and answer with a
+ *         WELCOME carrying this end's.
+ *  @return 0; -1 for another protocol version, to drop the session. */
 static int
-session_message(tiku_remote_session_t *s)
+session_hello(tiku_remote_session_t *s)
 {
     const unsigned char *p = s->buf;
-    tiku_remote_window_t *win;
     int changed = 0;
-
     switch (s->cur_type) {
     case TIKU_RMSG_HELLO:
         if (s->want >= 4u + 32u) {
@@ -460,6 +459,22 @@ session_message(tiku_remote_session_t *s)
             }
         }
         break;
+    default: break;
+    }
+    return changed;
+}
+
+/** @brief A SURFACE maps the named shared pixel storage onto its window;
+ *         a READY selects which of its buffers the window shows.
+ *  @return nonzero when a window changed, -1 for a surface of impossible
+ *          size, to drop the session. */
+static int
+session_surface(tiku_remote_session_t *s)
+{
+    const unsigned char *p = s->buf;
+    tiku_remote_window_t *win;
+    int changed = 0;
+    switch (s->cur_type) {
     case TIKU_RMSG_SURFACE:
         if (s->want >= 12u + TIKU_REMOTE_SHM_NAME) {
             char name[TIKU_REMOTE_SHM_NAME];
@@ -547,36 +562,21 @@ session_message(tiku_remote_session_t *s)
             changed = 1;
         }
         break;
-    case TIKU_RMSG_OPEN:
-        if (s->want >= 12u + TIKU_REMOTE_TITLE) {
-            int32_t w, h;
+    default: break;
+    }
+    return changed;
+}
 
-            memcpy(&w, p + 4, 4);
-            memcpy(&h, p + 8, 4);
-            if (w < 1 || h < 1 || w > TIKU_REMOTE_MAX_DIM ||
-                h > TIKU_REMOTE_MAX_DIM) {
-                return -1;
-            }
-            /* An OPEN naming a window this session already holds is
-             * that window again, not a second one: the id is the
-             * application's own word for it. */
-            win = session_window(s, id_of(p));
-            if (win == NULL) {
-                win = session_window_free(s);
-            }
-            if (win == NULL) {
-                break;          /* every row is in use */
-            }
-            win->session = s;
-            win->win_id = id_of(p);
-            memcpy(win->title, p + 12, TIKU_REMOTE_TITLE);
-            win->title[TIKU_REMOTE_TITLE - 1] = '\0';
-            win->open_w = w;
-            win->open_h = h;
-            win->opened = 1;
-            changed = 1;
-        }
-        break;
+/** @brief A FRAME copies pixels into its window; a DRAW gives it a
+ *         display list.
+ *  @return nonzero when a window changed. */
+static int
+session_paint(tiku_remote_session_t *s)
+{
+    const unsigned char *p = s->buf;
+    tiku_remote_window_t *win;
+    int changed = 0;
+    switch (s->cur_type) {
     case TIKU_RMSG_FRAME:
         if (s->want >= 12u) {
             int32_t w, h;
@@ -652,6 +652,61 @@ session_message(tiku_remote_session_t *s)
             }
         }
         break;
+    default: break;
+    }
+    return changed;
+}
+
+/** @brief Apply one complete message to its session: HELLO through
+ *         session_hello(), SURFACE and READY through session_surface(),
+ *         FRAME and DRAW through session_paint(), the rest here.
+ *  @return nonzero when a window changed, -1 to drop the session. */
+static int
+session_message(tiku_remote_session_t *s)
+{
+    const unsigned char *p = s->buf;
+    tiku_remote_window_t *win;
+    int changed = 0;
+
+    switch (s->cur_type) {
+    case TIKU_RMSG_HELLO:
+        return session_hello(s);
+    case TIKU_RMSG_SURFACE:
+    case TIKU_RMSG_READY:
+        return session_surface(s);
+    case TIKU_RMSG_OPEN:
+        if (s->want >= 12u + TIKU_REMOTE_TITLE) {
+            int32_t w, h;
+
+            memcpy(&w, p + 4, 4);
+            memcpy(&h, p + 8, 4);
+            if (w < 1 || h < 1 || w > TIKU_REMOTE_MAX_DIM ||
+                h > TIKU_REMOTE_MAX_DIM) {
+                return -1;
+            }
+            /* An OPEN naming a window this session already holds is
+             * that window again, not a second one: the id is the
+             * application's own word for it. */
+            win = session_window(s, id_of(p));
+            if (win == NULL) {
+                win = session_window_free(s);
+            }
+            if (win == NULL) {
+                break;          /* every row is in use */
+            }
+            win->session = s;
+            win->win_id = id_of(p);
+            memcpy(win->title, p + 12, TIKU_REMOTE_TITLE);
+            win->title[TIKU_REMOTE_TITLE - 1] = '\0';
+            win->open_w = w;
+            win->open_h = h;
+            win->opened = 1;
+            changed = 1;
+        }
+        break;
+    case TIKU_RMSG_FRAME:
+    case TIKU_RMSG_DRAW:
+        return session_paint(s);
     case TIKU_RMSG_RAISE:
         /* Noted here; the shell does the raising. */
         win = (s->want >= 4u) ? session_window(s, id_of(p)) : NULL;
@@ -1185,7 +1240,10 @@ send_flat(int *fd, uint32_t type, const tiku_msg_t *m,
     }
     int sent = 1;
     if (session) sent = session_send(session, type, flat, (uint32_t)n);
-    else send_msg(fd, type, flat, (uint32_t)n);
+    else {
+        send_msg(fd, type, flat, (uint32_t)n);
+        sent = *fd >= 0;
+    }
     free(flat);
     return sent;
 }
@@ -1310,6 +1368,7 @@ tiku_remote_draw(tiku_remote_client_t *client, uint32_t id,
     if (ok) {
         send_msg(&client->fd, TIKU_RMSG_DRAW, payload,
                  (uint32_t)(12u + n));
+        ok = client->fd >= 0;
     }
     free(payload);
     return ok;

@@ -257,7 +257,7 @@ tiku_attr_format(const tiku_desc_t *d, const char *raw,
     if (out == NULL || max == 0u) {
         return 0;
     }
-    if (raw == NULL || raw[0] == '\0') {
+    if (raw == NULL) {
         /* No value: "-".  A node not yet read must not look like a node
          * whose value is empty. */
         snprintf(out, max, "-");

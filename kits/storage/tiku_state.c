@@ -631,6 +631,19 @@ tiku_sounds_dir(char *out, size_t max)
     return out;
 }
 
+/** @brief Create a directory, accepting an existing directory or its symlink. */
+static int
+make_parent(const char *path)
+{
+    struct stat st;
+
+    if (mkdir(path, 0755) == 0) {
+        return 0;
+    }
+    return errno == EEXIST && stat(path, &st) == 0 && S_ISDIR(st.st_mode)
+             ? 0 : -1;
+}
+
 int
 tiku_state_mkparents(const char *path)
 {
@@ -638,7 +651,7 @@ tiku_state_mkparents(const char *path)
     char *slash;
     size_t i;
 
-    if (path == NULL || path[0] == '\0') {
+    if (path == NULL || path[0] == '\0' || strlen(path) >= sizeof dir) {
         return -1;
     }
     snprintf(dir, sizeof dir, "%s", path);
@@ -652,10 +665,11 @@ tiku_state_mkparents(const char *path)
     for (i = 1u; dir[i] != '\0'; i++) {
         if (dir[i] == '/') {
             dir[i] = '\0';
-            (void)mkdir(dir, 0755);
+            if (make_parent(dir) != 0) {
+                return -1;
+            }
             dir[i] = '/';
         }
     }
-    (void)mkdir(dir, 0755);
-    return 0;
+    return make_parent(dir);
 }

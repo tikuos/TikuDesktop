@@ -144,7 +144,7 @@ svc_present(void *ctx, uint32_t id, const struct tiku_dl *dl,
     if (dl) tiku_dl_say(dl, description, sizeof description);
     else description[0] = 0;
     tiku_remote_describe(&c->remote, id, description);
-    return result;
+    return result == 0;
 }
 
 /** @brief Send window @p id's menu set. */

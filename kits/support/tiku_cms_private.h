@@ -17,6 +17,14 @@
 #include "tiku_der.h"
 #include "tiku_pubkey.h"
 
+/** @brief Erase secret storage with writes the compiler must retain. */
+static inline void
+cms_wipe(void *ptr, size_t n)
+{
+    volatile unsigned char *p = ptr;
+    while (n--) *p++ = 0;
+}
+
 /** @brief A certificate as read: its parts, pointing into its DER. */
 typedef struct {
     tiku_der_t           whole, tbs;  /**< all of it; what the issuer signed */

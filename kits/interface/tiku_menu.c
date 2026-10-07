@@ -549,8 +549,10 @@ tiku_menubar_remove(tiku_menubar_t *b, tiku_menu_t *m)
                 b->menu[j] = b->menu[j + 1];
             }
             b->count--;
-            if (b->open >= b->count) {
+            if (b->open == i) {
                 b->open = -1;
+            } else if (b->open > i) {
+                b->open--;
             }
             return;
         }

@@ -92,8 +92,11 @@ tiku_cv_annotation_paint(tiku_codeview_t *v, tiku_surface_t *s,
     row.h = tiku_codeview_row_height(v);
     tiku_fill(s, row, v->marks[kind] != TIKU_CODEVIEW_MARK_NONE ?
               tiku_dim(v->mark_colors[kind], TIKU_C_DOC) : TIKU_C_PANEL);
-    if (n >= sizeof text)
+    if (n >= sizeof text) {
         n = sizeof text - 1;
+        while (n > 0 && ((unsigned char)piece[n] & 0xc0) == 0x80)
+            n--;
+    }
     memcpy(text, piece, n);
     text[n] = '\0';
     tiku_text(s, f, row.x + ANN_INDENT, y + f->ascent, text, TIKU_C_TEXT);

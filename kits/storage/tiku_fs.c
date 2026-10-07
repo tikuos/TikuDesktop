@@ -113,7 +113,7 @@ tiku_fs_copy(tiku_fs_t *fs, const char *const *paths, int n, const char *dst_dir
     int r;
 
     if (fs == NULL) {
-        return 0;
+        return -1;
     }
     fop_fs_take((tiku_fs_t *)fs);
     r = fop_fs_copy(fs, paths, n, dst_dir, policy);
@@ -127,7 +127,7 @@ tiku_fs_move(tiku_fs_t *fs, const char *const *paths, int n, const char *dst_dir
     int r;
 
     if (fs == NULL) {
-        return 0;
+        return -1;
     }
     fop_fs_take((tiku_fs_t *)fs);
     r = fop_fs_move(fs, paths, n, dst_dir, policy);
@@ -141,7 +141,7 @@ tiku_fs_duplicate(tiku_fs_t *fs, const char *const *paths, int n)
     int r;
 
     if (fs == NULL) {
-        return 0;
+        return -1;
     }
     fop_fs_take((tiku_fs_t *)fs);
     r = fop_fs_duplicate(fs, paths, n);
@@ -155,7 +155,7 @@ tiku_fs_trash(tiku_fs_t *fs, const char *const *paths, int n)
     int r;
 
     if (fs == NULL) {
-        return 0;
+        return -1;
     }
     fop_fs_take((tiku_fs_t *)fs);
     r = fop_fs_trash(fs, paths, n);
@@ -183,7 +183,7 @@ tiku_fs_delete(tiku_fs_t *fs, const char *const *paths, int n)
     int r;
 
     if (fs == NULL) {
-        return 0;
+        return -1;
     }
     fop_fs_take((tiku_fs_t *)fs);
     r = fop_fs_delete(fs, paths, n);
@@ -239,7 +239,7 @@ tiku_fs_trash_dir(tiku_fs_t *fs, const char *path, char *out, size_t max)
     int r;
 
     if (fs == NULL) {
-        return 0;
+        return -1;
     }
     fop_fs_take((tiku_fs_t *)fs);
     r = fop_fs_trash_dir(fs, path, out, max);
@@ -323,7 +323,7 @@ tiku_fs_rename(tiku_fs_t *fs, const char *path, const char *new_name, char *err,
     int r;
 
     if (fs == NULL) {
-        return 0;
+        return -1;
     }
     fop_fs_take((tiku_fs_t *)fs);
     r = fop_fs_rename(fs, path, new_name, err, errmax);
@@ -423,7 +423,7 @@ tiku_fs_link(tiku_fs_t *fs, const char *const *paths, int n, const char *dst, in
     int r;
 
     if (fs == NULL) {
-        return 0;
+        return -1;
     }
     fop_fs_take((tiku_fs_t *)fs);
     r = fop_fs_link(fs, paths, n, dst, relative);
@@ -463,7 +463,7 @@ tiku_fs_new_folder(tiku_fs_t *fs, const char *dir, char *out, size_t max, char *
     int r;
 
     if (fs == NULL) {
-        return 0;
+        return -1;
     }
     fop_fs_take((tiku_fs_t *)fs);
     r = fop_fs_new_folder(fs, dir, out, max, err, errmax);
@@ -477,7 +477,7 @@ tiku_fs_new_from_template(tiku_fs_t *fs, const char *template_path, const char *
     int r;
 
     if (fs == NULL) {
-        return 0;
+        return -1;
     }
     fop_fs_take((tiku_fs_t *)fs);
     r = fop_fs_new_from_template(fs, template_path, dst_dir, out, max, err,
@@ -555,4 +555,3 @@ tiku_fs_redo(tiku_fs_t *fs, char *err, size_t errmax)
     fop_fs_give((tiku_fs_t *)fs);
     return r;
 }
-

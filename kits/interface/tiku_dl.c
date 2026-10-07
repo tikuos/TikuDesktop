@@ -219,17 +219,38 @@ int
 tiku_dl_append(tiku_dl_t *dst, const tiku_dl_t *src)
 {
     unsigned char *p;
+    uint32_t art[TIKU_DL_ART_MAX];
+    int arts, i, j;
 
     if (dst == NULL || src == NULL) {
         return 0;
     }
     if (src->n == 0u) {
+        dst->missed += src->missed;
         return 1;
+    }
+    arts = dst->arts;
+    memcpy(art, dst->art, (size_t)arts * sizeof *art);
+    for (i = 0; i < src->arts; i++) {
+        for (j = 0; j < arts && art[j] != src->art[i]; j++) {}
+        if (j == arts) {
+            if (arts == TIKU_DL_ART_MAX) {
+                return 0;
+            }
+            art[arts++] = src->art[i];
+        }
+    }
+    if (src->n > SIZE_MAX - dst->n) {
+        return 0;
     }
     if (dst->n + src->n > dst->cap) {
         size_t cap = dst->cap ? dst->cap : 256u;
 
         while (cap < dst->n + src->n) {
+            if (cap > SIZE_MAX / 2u) {
+                cap = dst->n + src->n;
+                break;
+            }
             cap *= 2u;
         }
         p = realloc(dst->b, cap);
@@ -243,6 +264,10 @@ tiku_dl_append(tiku_dl_t *dst, const tiku_dl_t *src)
     dst->n += src->n;
     dst->count += src->count;
     dst->missed += src->missed;
+    dst->icons += src->icons;
+    dst->pictures += src->pictures;
+    dst->arts = arts;
+    memcpy(dst->art, art, (size_t)arts * sizeof *art);
     return 1;
 }
 
@@ -867,6 +892,94 @@ face_of(unsigned char id)
     }
 }
 
+/** @brief Play one UI-widget command; return zero for an unknown opcode. */
+static int
+play_widget(tiku_surface_t *s, uint16_t op, const unsigned char *a, uint16_t n)
+{
+    switch (op) {
+    case OP_PANEL:
+        tiku_ui_panel(s, get_rect(a));
+        break;
+    case OP_RAISED:
+        tiku_ui_raised(s, get_rect(a));
+        break;
+    case OP_SUNKEN:
+        tiku_ui_sunken(s, get_rect(a), get32(a + 8));
+        break;
+    case OP_BUTTON:
+        tiku_ui_button(s, get_rect(a), (const char *)(a + 12),
+                       get32(a + 8));
+        break;
+    case OP_GAUGE:
+        tiku_ui_gauge(s, get_rect(a),
+                      (float)get16(a + 8) / 1000.0f);
+        break;
+    case OP_TIP:
+        tiku_ui_tip(s, get_rect(a), (const char *)(a + 12));
+        break;
+    case OP_TEXTFIELD: {
+        const char *text = (const char *)(a + 12);
+
+        /* Played with the caret past the end: the stream carries the
+         * field's text, not its caret. */
+        tiku_ui_textfield(s, get_rect(a), text, (int)strlen(text),
+                          get32(a + 8));
+        break;
+    }
+    case OP_SCROLLBAR:
+        tiku_ui_scrollbar(s, get_rect(a),
+                          (float)get16(a + 8) / 1000.0f,
+                          (float)get16(a + 10) / 1000.0f,
+                          (int)get16(a + 12));
+        break;
+    case OP_SLIDER: {
+        tiku_slider_t sl;
+
+        tiku_slider_init(&sl, get_i16(a + 8), get_i16(a + 10),
+                         get_i16(a + 12), 1);
+        tiku_slider_draw(&sl, s, get_rect(a));
+        break;
+    }
+    case OP_MENUFIELD:
+        tiku_ui_menufield(s, get_rect(a), (const char *)(a + 12),
+                          get32(a + 8));
+        break;
+    case OP_TABS: {
+        tiku_tabs_t t;
+        const char *at = (const char *)(a + 12);
+        const unsigned char *end = a + n;
+        int n = (int)get16(a + 8), k;
+
+        tiku_tabs_init(&t);
+        for (k = 0; k < n && (const unsigned char *)at < end; k++) {
+            (void)tiku_tabs_add(&t, at);
+            at += strlen(at) + 1u;
+        }
+        (void)tiku_tabs_select(&t, (int)get_i16(a + 10));
+        tiku_tabs_draw(&t, s, get_rect(a));
+        break;
+    }
+    case OP_ALERT_ICON:
+        tiku_alert_icon_draw(s, get_i16(a), get_i16(a + 2),
+                             (tiku_alert_kind_t)get16(a + 4));
+        break;
+    case OP_CHECKBOX:
+        tiku_ui_checkbox(s, get_rect(a), (const char *)(a + 12),
+                         get32(a + 8));
+        break;
+    case OP_RADIO:
+        tiku_ui_radio(s, get_rect(a), (const char *)(a + 12),
+                      get32(a + 8));
+        break;
+    case OP_LIST_ROW:
+        tiku_ui_list_row(s, get_rect(a), (const char *)(a + 12),
+                         get32(a + 8) != 0u);
+        break;
+    default: return 0;
+    }
+    return 1;
+}
+
 int
 tiku_dl_play(const tiku_dl_t *dl, tiku_surface_t *s)
 {
@@ -997,86 +1110,8 @@ tiku_dl_play(const tiku_dl_t *dl, tiku_surface_t *s)
                 continue;       /* no rasteriser: not carried out */
             }
             break;
-        case OP_PANEL:
-            tiku_ui_panel(s, get_rect(a));
-            break;
-        case OP_RAISED:
-            tiku_ui_raised(s, get_rect(a));
-            break;
-        case OP_SUNKEN:
-            tiku_ui_sunken(s, get_rect(a), get32(a + 8));
-            break;
-        case OP_BUTTON:
-            tiku_ui_button(s, get_rect(a), (const char *)(a + 12),
-                           get32(a + 8));
-            break;
-        case OP_GAUGE:
-            tiku_ui_gauge(s, get_rect(a),
-                          (float)get16(a + 8) / 1000.0f);
-            break;
-        case OP_TIP:
-            tiku_ui_tip(s, get_rect(a), (const char *)(a + 12));
-            break;
-        case OP_TEXTFIELD: {
-            const char *text = (const char *)(a + 12);
-
-            /* Played with the caret past the end: the stream carries the
-             * field's text, not its caret. */
-            tiku_ui_textfield(s, get_rect(a), text, (int)strlen(text),
-                              get32(a + 8));
-            break;
-        }
-        case OP_SCROLLBAR:
-            tiku_ui_scrollbar(s, get_rect(a),
-                              (float)get16(a + 8) / 1000.0f,
-                              (float)get16(a + 10) / 1000.0f,
-                              (int)get16(a + 12));
-            break;
-        case OP_SLIDER: {
-            tiku_slider_t sl;
-
-            tiku_slider_init(&sl, get_i16(a + 8), get_i16(a + 10),
-                             get_i16(a + 12), 1);
-            tiku_slider_draw(&sl, s, get_rect(a));
-            break;
-        }
-        case OP_MENUFIELD:
-            tiku_ui_menufield(s, get_rect(a), (const char *)(a + 12),
-                              get32(a + 8));
-            break;
-        case OP_TABS: {
-            tiku_tabs_t t;
-            const char *at = (const char *)(a + 12);
-            const unsigned char *end = a + n;
-            int n = (int)get16(a + 8), k;
-
-            tiku_tabs_init(&t);
-            for (k = 0; k < n && (const unsigned char *)at < end; k++) {
-                (void)tiku_tabs_add(&t, at);
-                at += strlen(at) + 1u;
-            }
-            (void)tiku_tabs_select(&t, (int)get_i16(a + 10));
-            tiku_tabs_draw(&t, s, get_rect(a));
-            break;
-        }
-        case OP_ALERT_ICON:
-            tiku_alert_icon_draw(s, get_i16(a), get_i16(a + 2),
-                                 (tiku_alert_kind_t)get16(a + 4));
-            break;
-        case OP_CHECKBOX:
-            tiku_ui_checkbox(s, get_rect(a), (const char *)(a + 12),
-                             get32(a + 8));
-            break;
-        case OP_RADIO:
-            tiku_ui_radio(s, get_rect(a), (const char *)(a + 12),
-                          get32(a + 8));
-            break;
-        case OP_LIST_ROW:
-            tiku_ui_list_row(s, get_rect(a), (const char *)(a + 12),
-                             get32(a + 8) != 0u);
-            break;
         default:
-            continue;               /* unknown op: stepped over, not counted */
+            if (!play_widget(s, op, a, n)) continue;
         }
         done++;
     }
@@ -1385,10 +1420,9 @@ tiku_dl_say(const tiku_dl_t *dl, char *out, size_t max)
     free(flat);
     if (tiku_dl_misses(dl) > 0 && used + 1u < max) {
         /* A closing line says how many marks the wire could not carry. */
-        used += (size_t)snprintf(out + used, max - used,
-                                 "(%d marks this window drew, the wire "
-                                 "could not carry)\n",
-                                 tiku_dl_misses(dl));
+        say(out, max, &used,
+            "(%d marks this window drew, the wire could not carry)\n",
+            tiku_dl_misses(dl));
     }
     return used;
 }
@@ -1452,10 +1486,9 @@ tiku_dl_facts(const tiku_dl_t *dl, char *out, size_t max)
     }
     free(flat);
     if (tiku_dl_misses(dl) > 0 && used + 1u < max) {
-        used += (size_t)snprintf(out + used, max - used,
-                                 "(%d marks this window drew, the wire "
-                                 "could not carry)\n",
-                                 tiku_dl_misses(dl));
+        say(out, max, &used,
+            "(%d marks this window drew, the wire could not carry)\n",
+            tiku_dl_misses(dl));
     }
     return used;
 }

@@ -335,7 +335,7 @@ tiku_editdoc_annotation_add(tiku_editdoc_t *doc, int64_t line,
                             const char *text, unsigned kind)
 {
     ptrdiff_t i;
-    size_t n;
+    size_t n, last;
     char *copy;
     tiku_ed_annotation_t *a;
 
@@ -358,6 +358,13 @@ tiku_editdoc_annotation_add(tiku_editdoc_t *doc, int64_t line,
         return TIKU_EDIT_NO_MEMORY;
     }
     memcpy(copy, text, n + 1);
+    /* Slot order is insertion order; the free slot moves past live entries. */
+    last = doc->nannotations;
+    while (last > (size_t)i + 1 && !doc->annotations[last - 1].live)
+        last--;
+    memmove(&doc->annotations[i], &doc->annotations[i + 1],
+            (last - (size_t)i - 1) * sizeof *a);
+    i = (ptrdiff_t)last - 1;
     a = &doc->annotations[i];
     a->text = copy;
     a->live = 1;

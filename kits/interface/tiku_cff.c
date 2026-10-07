@@ -604,81 +604,15 @@ do_stems(cff_run_t *run)
 }
 
 /**
- * @brief Run operator @p op on the stack; @p code and @p left step past
- *        any bytes it consumes (a hint mask).
- * @return 0 malformed, 1 go on, 2 a return, 3 an endchar.
+ * @brief Run a curve operator (rrcurveto, rcurveline, rlinecurve,
+ *        vvcurveto, hhcurveto, vhcurveto, hvcurveto) on the stack.
+ * @return 1, and the stack emptied; 0 for any other operator.
  */
 static int
-run_op(cff_run_t *run, int op, const unsigned char **code, size_t *left)
+run_curves(cff_run_t *run, int op)
 {
-    int i, skip;
-
+    int i;
     switch (op) {
-    case 1:                     /* hstem */
-    case 3:                     /* vstem */
-    case 18:                    /* hstemhm */
-    case 23:                    /* vstemhm */
-        do_stems(run);
-        return 1;
-    case 19:                    /* hintmask */
-    case 20: {                  /* cntrmask */
-        /* Arguments still on the stack here are an implied vstemhm: the
-         * format lets a charstring leave the operator out. */
-        size_t bytes;
-
-        do_stems(run);
-        bytes = (size_t)((run->stems + 7) / 8);
-        if (bytes > *left) {
-            return 0;
-        }
-        *code += bytes;
-        *left -= bytes;
-        return 1;
-    }
-    case 21:                    /* rmoveto */
-        skip = take_width(run, 2);
-        if (run->sp - skip >= 2) {
-            moveto(run, run->x + run->stack[skip],
-                   run->y + run->stack[skip + 1]);
-        }
-        run->sp = 0;
-        return 1;
-    case 22:                    /* hmoveto */
-        skip = take_width(run, 1);
-        if (run->sp - skip >= 1) {
-            moveto(run, run->x + run->stack[skip], run->y);
-        }
-        run->sp = 0;
-        return 1;
-    case 4:                     /* vmoveto */
-        skip = take_width(run, 1);
-        if (run->sp - skip >= 1) {
-            moveto(run, run->x, run->y + run->stack[skip]);
-        }
-        run->sp = 0;
-        return 1;
-    case 5:                     /* rlineto */
-        for (i = 0; i + 1 < run->sp; i += 2) {
-            lineto(run, run->x + run->stack[i], run->y + run->stack[i + 1]);
-        }
-        run->sp = 0;
-        return 1;
-    case 6:                     /* hlineto */
-    case 7:                     /* vlineto */
-        {
-            int horizontal = (op == 6);
-
-            for (i = 0; i < run->sp; i++) {
-                if (horizontal) {
-                    lineto(run, run->x + run->stack[i], run->y);
-                } else {
-                    lineto(run, run->x, run->y + run->stack[i]);
-                }
-                horizontal = !horizontal;
-            }
-        }
-        run->sp = 0;
-        return 1;
     case 8:                     /* rrcurveto */
         for (i = 0; i + 5 < run->sp; i += 6) {
             float ax = run->x + run->stack[i];
@@ -785,77 +719,20 @@ run_op(cff_run_t *run, int op, const unsigned char **code, size_t *left)
         run->sp = 0;
         return 1;
     }
-    case 10:                    /* callsubr */
-    case 29: {                  /* callgsubr */
-        const cff_index_t *idx = (op == 10) ? run->lsubrs
-                                            : &run->cff->gsubrs;
-        int bias = (op == 10) ? run->lbias : run->gbias;
-        const unsigned char *body;
-        size_t body_len;
-        int n;
-
-        if (run->sp < 1 || idx == NULL) {
-            return 0;
-        }
-        n = (int)run->stack[--run->sp] + bias;
-        body_len = index_get(run->cff, idx, n, &body);
-        if (body_len == 0u) {
-            return 1;           /* an empty or absent subr draws nothing */
-        }
-        if (run->depth >= CFF_MAX_DEPTH) {
-            return 0;
-        }
-        run->depth++;
-        n = run_charstring(run, body, body_len);
-        run->depth--;
-        if (n == 0) {
-            return 0;
-        }
-        if (n == 2) {
-            return 3;           /* the subroutine ended the glyph */
-        }
-        return 1;
+    default: return 0;
     }
-    case 15:                    /* vsindex (CFF2): which deltas to expect */
-        if (run->cff2 && run->sp >= 1) {
-            int idx = (int)run->stack[run->sp - 1];
+}
 
-            if (idx >= 0 && idx < run->cff->nregion) {
-                run->cur_regions = run->cff->region[idx];
-            }
-        }
-        run->sp = 0;
-        return 1;
-    case 16:                    /* blend (CFF2): the default, no deltas */
-        if (run->cff2 && run->sp >= 1) {
-            int n = (int)run->stack[--run->sp];
-            int drop = n * run->cur_regions;
-
-            /* The n default values sit below n*regions deltas; dropping
-             * the deltas leaves the defaults, the instance drawn.  A count
-             * larger than the stack empties it. */
-            if (n < 0 || drop < 0) {
-                run->sp = 0;
-            } else {
-                if (drop > run->sp) {
-                    drop = run->sp;
-                }
-                run->sp -= drop;
-            }
-        } else {
-            run->sp = 0;
-        }
-        return 1;
-    case 11:                    /* return */
-        return 2;
-    case 14:                    /* endchar */
-        (void)take_width(run, 0);
-        if (run->open) {
-            tiku_path_close(run->path);
-            run->open = 0;
-        }
-        run->sp = 0;
-        return 3;
+/**
+ * @brief Run a flex operator (flex, hflex, hflex1, flex1) on the stack: two
+ *        curves, or nothing when the stack is short.
+ * @return 1, and the stack emptied; 0 for any other operator.
+ */
+static int
+run_flex(cff_run_t *run, int op)
+{
+    int i;
+    switch (op) {
     case 1235: {                /* flex */
         if (run->sp >= 13) {
             float ax = run->x + run->stack[0], ay = run->y + run->stack[1];
@@ -946,6 +823,162 @@ run_op(cff_run_t *run, int op, const unsigned char **code, size_t *left)
         run->sp = 0;
         return 1;
     }
+    default: return 0;
+    }
+}
+
+/**
+ * @brief Run operator @p op on the stack; @p code and @p left step past
+ *        any bytes it consumes (a hint mask).  Curve and flex operators
+ *        go to run_curves() and run_flex().
+ * @return 0 malformed, 1 go on, 2 a return, 3 an endchar.
+ */
+static int
+run_op(cff_run_t *run, int op, const unsigned char **code, size_t *left)
+{
+    int i, skip;
+
+    switch (op) {
+    case 1:                     /* hstem */
+    case 3:                     /* vstem */
+    case 18:                    /* hstemhm */
+    case 23:                    /* vstemhm */
+        do_stems(run);
+        return 1;
+    case 19:                    /* hintmask */
+    case 20: {                  /* cntrmask */
+        /* Arguments still on the stack here are an implied vstemhm: the
+         * format lets a charstring leave the operator out. */
+        size_t bytes;
+
+        do_stems(run);
+        bytes = (size_t)((run->stems + 7) / 8);
+        if (bytes > *left) {
+            return 0;
+        }
+        *code += bytes;
+        *left -= bytes;
+        return 1;
+    }
+    case 21:                    /* rmoveto */
+        skip = take_width(run, 2);
+        if (run->sp - skip >= 2) {
+            moveto(run, run->x + run->stack[skip],
+                   run->y + run->stack[skip + 1]);
+        }
+        run->sp = 0;
+        return 1;
+    case 22:                    /* hmoveto */
+        skip = take_width(run, 1);
+        if (run->sp - skip >= 1) {
+            moveto(run, run->x + run->stack[skip], run->y);
+        }
+        run->sp = 0;
+        return 1;
+    case 4:                     /* vmoveto */
+        skip = take_width(run, 1);
+        if (run->sp - skip >= 1) {
+            moveto(run, run->x, run->y + run->stack[skip]);
+        }
+        run->sp = 0;
+        return 1;
+    case 5:                     /* rlineto */
+        for (i = 0; i + 1 < run->sp; i += 2) {
+            lineto(run, run->x + run->stack[i], run->y + run->stack[i + 1]);
+        }
+        run->sp = 0;
+        return 1;
+    case 6:                     /* hlineto */
+    case 7:                     /* vlineto */
+        {
+            int horizontal = (op == 6);
+
+            for (i = 0; i < run->sp; i++) {
+                if (horizontal) {
+                    lineto(run, run->x + run->stack[i], run->y);
+                } else {
+                    lineto(run, run->x, run->y + run->stack[i]);
+                }
+                horizontal = !horizontal;
+            }
+        }
+        run->sp = 0;
+        return 1;
+    case 8: case 24: case 25: case 26: case 27: case 30: case 31:
+        return run_curves(run, op);
+    case 10:                    /* callsubr */
+    case 29: {                  /* callgsubr */
+        const cff_index_t *idx = (op == 10) ? run->lsubrs
+                                            : &run->cff->gsubrs;
+        int bias = (op == 10) ? run->lbias : run->gbias;
+        const unsigned char *body;
+        size_t body_len;
+        int n;
+
+        if (run->sp < 1 || idx == NULL) {
+            return 0;
+        }
+        n = (int)run->stack[--run->sp] + bias;
+        body_len = index_get(run->cff, idx, n, &body);
+        if (body_len == 0u) {
+            return 1;           /* an empty or absent subr draws nothing */
+        }
+        if (run->depth >= CFF_MAX_DEPTH) {
+            return 0;
+        }
+        run->depth++;
+        n = run_charstring(run, body, body_len);
+        run->depth--;
+        if (n == 0) {
+            return 0;
+        }
+        if (n == 2) {
+            return 3;           /* the subroutine ended the glyph */
+        }
+        return 1;
+    }
+    case 15:                    /* vsindex (CFF2): which deltas to expect */
+        if (run->cff2 && run->sp >= 1) {
+            int idx = (int)run->stack[run->sp - 1];
+
+            if (idx >= 0 && idx < run->cff->nregion) {
+                run->cur_regions = run->cff->region[idx];
+            }
+        }
+        run->sp = 0;
+        return 1;
+    case 16:                    /* blend (CFF2): the default, no deltas */
+        if (run->cff2 && run->sp >= 1) {
+            int n = (int)run->stack[--run->sp];
+            int drop = n * run->cur_regions;
+
+            /* The n default values sit below n*regions deltas; dropping
+             * the deltas leaves the defaults, the instance drawn.  A count
+             * larger than the stack empties it. */
+            if (n < 0 || drop < 0) {
+                run->sp = 0;
+            } else {
+                if (drop > run->sp) {
+                    drop = run->sp;
+                }
+                run->sp -= drop;
+            }
+        } else {
+            run->sp = 0;
+        }
+        return 1;
+    case 11:                    /* return */
+        return 2;
+    case 14:                    /* endchar */
+        (void)take_width(run, 0);
+        if (run->open) {
+            tiku_path_close(run->path);
+            run->open = 0;
+        }
+        run->sp = 0;
+        return 3;
+    case 1234: case 1235: case 1236: case 1237:
+        return run_flex(run, op);
     default:
         /* The arithmetic and storage operators, and any unknown one, are
          * not run: the stack is cleared and the charstring goes on. */

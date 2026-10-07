@@ -553,6 +553,17 @@ corner_coverage(int x, int y, int cx, int cy, int r)
     return (unsigned)(inside * 255 / 16);
 }
 
+/** @brief Native pixel bounds with exclusive right and bottom edges. */
+typedef struct { int x0, y0, x1, y1; } native_box_t;
+
+/** @brief The native pixel bounds of logical rectangle @p r at @p scale. */
+static native_box_t
+native_box(tiku_rect_t r, int scale)
+{
+    return (native_box_t){r.x * scale, r.y * scale,
+                          (r.x + r.w) * scale, (r.y + r.h) * scale};
+}
+
 /**
  * @brief The corners of @p r, each blended by how much the disc covers.
  *
@@ -567,10 +578,7 @@ round_corners(tiku_surface_t *s, tiku_rect_t r, int radius, unsigned corners,
     int sc = scale_of(s);
     long stride = (long)s->w * sc;
     int rad = radius * sc;
-    int x0 = r.x * sc, y0 = r.y * sc;
-    int x1 = (r.x + r.w) * sc, y1 = (r.y + r.h) * sc;
-    int cx0 = s->clip.x * sc, cy0 = s->clip.y * sc;
-    int cx1 = (s->clip.x + s->clip.w) * sc, cy1 = (s->clip.y + s->clip.h) * sc;
+    native_box_t box = native_box(r, sc), clip = native_box(s->clip, sc);
     int k, x, y;
 
     if (rad <= 0 || r.w < 2 * radius || r.h < 2 * radius) {
@@ -578,23 +586,23 @@ round_corners(tiku_surface_t *s, tiku_rect_t r, int radius, unsigned corners,
     }
     for (k = 0; k < 4; k++) {
         /* Each corner's square of pixels, and the disc's centre for it. */
-        int left = (k & 1) ? x1 - rad : x0;
+        int left = (k & 1) ? box.x1 - rad : box.x0;
 
         if (!(corners & (1u << k))) { continue; }
 
-        int top = (k & 2) ? y1 - rad : y0;
-        int cx = (k & 1) ? x1 - rad : x0 + rad;
-        int cy = (k & 2) ? y1 - rad : y0 + rad;
+        int top = (k & 2) ? box.y1 - rad : box.y0;
+        int cx = (k & 1) ? box.x1 - rad : box.x0 + rad;
+        int cy = (k & 2) ? box.y1 - rad : box.y0 + rad;
 
         for (y = top; y < top + rad; y++) {
             tiku_rgb_t *row;
 
-            if (y < cy0 || y >= cy1) { continue; }
+            if (y < clip.y0 || y >= clip.y1) { continue; }
             row = s->px + (long)y * stride;
             for (x = left; x < left + rad; x++) {
                 unsigned a;
 
-                if (x < cx0 || x >= cx1) { continue; }
+                if (x < clip.x0 || x >= clip.x1) { continue; }
                 a = corner_coverage(x, y, cx, cy, rad);
                 if (ring) {
                     unsigned in = corner_coverage(x, y, cx, cy, rad - sc);
@@ -690,7 +698,8 @@ void
 tiku_blend_scaled(tiku_surface_t *dst, tiku_rect_t at,
                   const tiku_surface_t *src, float amount)
 {
-    int x0, y0, x1, y1, row, col, sc, sw, sh;
+    native_box_t box;
+    int row, col, sc, sw, sh;
     long dstride, sstride;
     unsigned a;
 
@@ -707,24 +716,28 @@ tiku_blend_scaled(tiku_surface_t *dst, tiku_rect_t at,
     sc = scale_of(dst);
     sw = src->w * scale_of(src);
     sh = src->h * scale_of(src);
-    x0 = (at.x > dst->clip.x) ? at.x : dst->clip.x;
-    y0 = (at.y > dst->clip.y) ? at.y : dst->clip.y;
-    x1 = at.x + at.w; y1 = at.y + at.h;
-    if (x1 > dst->clip.x + dst->clip.w) { x1 = dst->clip.x + dst->clip.w; }
-    if (y1 > dst->clip.y + dst->clip.h) { y1 = dst->clip.y + dst->clip.h; }
-    if (x1 <= x0 || y1 <= y0) {
+    box.x0 = (at.x > dst->clip.x) ? at.x : dst->clip.x;
+    box.y0 = (at.y > dst->clip.y) ? at.y : dst->clip.y;
+    box.x1 = at.x + at.w; box.y1 = at.y + at.h;
+    if (box.x1 > dst->clip.x + dst->clip.w) {
+        box.x1 = dst->clip.x + dst->clip.w;
+    }
+    if (box.y1 > dst->clip.y + dst->clip.h) {
+        box.y1 = dst->clip.y + dst->clip.h;
+    }
+    if (box.x1 <= box.x0 || box.y1 <= box.y0) {
         return;
     }
     dstride = (long)dst->w * sc;
     sstride = sw;
     /* Nearest source pixel for each native destination pixel, with no
      * filtering. */
-    for (row = y0 * sc; row < y1 * sc; row++) {
+    for (row = box.y0 * sc; row < box.y1 * sc; row++) {
         tiku_rgb_t *out = dst->px + (long)row * dstride;
         long sy = (long)(row - at.y * sc) * sh / ((long)at.h * sc);
 
         if (sy >= sh) { sy = sh - 1; }
-        for (col = x0 * sc; col < x1 * sc; col++) {
+        for (col = box.x0 * sc; col < box.x1 * sc; col++) {
             long sx = (long)(col - at.x * sc) * sw / ((long)at.w * sc);
             tiku_rgb_t p;
 
@@ -849,17 +862,33 @@ shadow_strip(tiku_surface_t *s, long stride, int x0, int y0, int x1, int y1,
     }
 }
 
+/**
+ * @brief Fill @p alpha, indexed by squared native distance from a shadow's
+ *        edge, for radius @p rad: @p strength of 255 at the edge, falling
+ *        off as the square of the distance left, 0 at the radius.
+ */
+static void
+shadow_alpha(unsigned char *alpha, int rad, float strength)
+{
+    unsigned edge = (unsigned)(strength * 255.0f + 0.5f);
+    long rad2 = (long)rad * rad;
+
+    for (long d2 = 0; d2 < rad2; d2++) {
+        long t = rad2 - d2;
+        alpha[d2] = (unsigned char)((long)edge * t / rad * t / rad / rad2);
+    }
+}
+
 void
 tiku_shadow(tiku_surface_t *s, tiku_rect_t r, int radius, int corner,
             float strength)
 {
     /* The table holds a radius of 32 native pixels; rad is clamped to
      * it below. */
-    static unsigned char alpha[32 * 32 + 1];
-    int sc, rad, drop, x0, y0, x1, y1, bx0, by0, bx1, by1, cr;
-    int rx0, ry0, rx1, ry1, cx0, cy0, cx1, cy1;
-    long stride, rad2, d2;
-    unsigned edge;
+    unsigned char alpha[32 * 32 + 1];
+    native_box_t box, band, cover, clip;
+    int sc, rad, cr;
+    long stride;
 
     tiku_gfx_rec_miss(s);   /* a blend over what is there has no op */
     if (s == NULL || r.w <= 0 || r.h <= 0 || radius <= 0 ||
@@ -867,55 +896,56 @@ tiku_shadow(tiku_surface_t *s, tiku_rect_t r, int radius, int corner,
         return;
     }
     if (strength > 1.0f) { strength = 1.0f; }
-    edge = (unsigned)(strength * 255.0f + 0.5f);
     sc = scale_of(s);
     stride = (long)s->w * sc;
     rad = radius * sc;
     if (rad > 32) { rad = 32; }
-    rad2 = (long)rad * rad;
     cr = (corner > 0) ? corner * sc : 0;
-    drop = 2 * sc;                      /* the light is a little above */
-    /*
-     * Falling off as the square of the distance left: dark at the edge,
-     * gone at the radius, tabulated once per distance.
-     */
-    for (d2 = 0; d2 < rad2; d2++) {
-        long t = rad2 - d2;
-
-        alpha[d2] = (unsigned char)((long)edge * t / rad * t / rad / rad2);
-    }
-    /* The box the shadow falls from, native, and the band around it. */
-    bx0 = r.x * sc; by0 = r.y * sc + drop;
-    bx1 = (r.x + r.w) * sc - 1; by1 = (r.y + r.h) * sc - 1 + drop;
-    x0 = bx0 - rad; y0 = by0 - rad; x1 = bx1 + rad + 1; y1 = by1 + rad + 1;
-    cx0 = s->clip.x * sc; cy0 = s->clip.y * sc;
-    cx1 = (s->clip.x + s->clip.w) * sc; cy1 = (s->clip.y + s->clip.h) * sc;
-    if (x0 < cx0) { x0 = cx0; }
-    if (y0 < cy0) { y0 = cy0; }
-    if (x1 > cx1) { x1 = cx1; }
-    if (y1 > cy1) { y1 = cy1; }
-    if (x0 >= x1 || y0 >= y1) { return; }
+    shadow_alpha(alpha, rad, strength);
+    /* The box the shadow falls from, native and dropped 2 logical pixels
+     * (the light is a little above), and the band around it. */
+    box.x0 = r.x * sc; box.y0 = r.y * sc + 2 * sc;
+    box.x1 = (r.x + r.w) * sc - 1; box.y1 = (r.y + r.h) * sc - 1 + 2 * sc;
+    band.x0 = box.x0 - rad; band.y0 = box.y0 - rad;
+    band.x1 = box.x1 + rad + 1; band.y1 = box.y1 + rad + 1;
+    clip = native_box(s->clip, sc);
+    if (band.x0 < clip.x0) { band.x0 = clip.x0; }
+    if (band.y0 < clip.y0) { band.y0 = clip.y0; }
+    if (band.x1 > clip.x1) { band.x1 = clip.x1; }
+    if (band.y1 > clip.y1) { band.y1 = clip.y1; }
+    if (band.x0 >= band.x1 || band.y0 >= band.y1) { return; }
     /*
      * The window covers its own box, so nothing is laid under it: the
      * band is the strip above the box, the strip below, and the two
      * beside it.  Walking only those keeps a large window's shadow from
      * costing its whole area.
      */
-    rx0 = r.x * sc; ry0 = r.y * sc;
-    rx1 = (r.x + r.w) * sc; ry1 = (r.y + r.h) * sc;
-    shadow_strip(s, stride, x0, y0, x1, ry0 < y0 ? y0 : ry0 > y1 ? y1 : ry0,
-                 bx0, by0, bx1, by1, rad2, alpha);
-    shadow_strip(s, stride, x0, ry1 < y0 ? y0 : ry1 > y1 ? y1 : ry1, x1, y1,
-                 bx0, by0, bx1, by1, rad2, alpha);
+    cover.x0 = r.x * sc; cover.y0 = r.y * sc;
+    cover.x1 = (r.x + r.w) * sc; cover.y1 = (r.y + r.h) * sc;
+    shadow_strip(s, stride, band.x0, band.y0, band.x1,
+                 cover.y0 < band.y0 ? band.y0
+                 : cover.y0 > band.y1 ? band.y1 : cover.y0,
+                 box.x0, box.y0, box.x1, box.y1, ((long)rad * rad), alpha);
+    shadow_strip(s, stride, band.x0,
+                 cover.y1 < band.y0 ? band.y0
+                 : cover.y1 > band.y1 ? band.y1 : cover.y1,
+                 band.x1, band.y1,
+                 box.x0, box.y0, box.x1, box.y1, ((long)rad * rad), alpha);
     {
-        int sy0 = ry0 < y0 ? y0 : ry0, sy1 = ry1 > y1 ? y1 : ry1;
+        int sy0 = cover.y0 < band.y0 ? band.y0 : cover.y0;
+        int sy1 = cover.y1 > band.y1 ? band.y1 : cover.y1;
 
         if (sy0 < sy1) {
-            shadow_strip(s, stride, x0, sy0,
-                         rx0 < x0 ? x0 : rx0 > x1 ? x1 : rx0, sy1,
-                         bx0, by0, bx1, by1, rad2, alpha);
-            shadow_strip(s, stride, rx1 < x0 ? x0 : rx1 > x1 ? x1 : rx1, sy0,
-                         x1, sy1, bx0, by0, bx1, by1, rad2, alpha);
+            shadow_strip(s, stride, band.x0, sy0,
+                         cover.x0 < band.x0 ? band.x0
+                         : cover.x0 > band.x1 ? band.x1 : cover.x0, sy1,
+                         box.x0, box.y0, box.x1, box.y1, ((long)rad * rad),
+                         alpha);
+            shadow_strip(s, stride,
+                         cover.x1 < band.x0 ? band.x0
+                         : cover.x1 > band.x1 ? band.x1 : cover.x1, sy0,
+                         band.x1, sy1, box.x0, box.y0, box.x1, box.y1,
+                         ((long)rad * rad), alpha);
         }
     }
     /*
@@ -928,27 +958,31 @@ tiku_shadow(tiku_surface_t *s, tiku_rect_t r, int radius, int corner,
      */
     if (cr <= 0) { return; }
     {
-        int qx0 = rx0 < x0 ? x0 : rx0, qx1 = rx1 > x1 ? x1 : rx1;
-        int qy0 = ry0 < y0 ? y0 : ry0, qy1 = ry1 > y1 ? y1 : ry1;
+        int qx0 = cover.x0 < band.x0 ? band.x0 : cover.x0;
+        int qx1 = cover.x1 > band.x1 ? band.x1 : cover.x1;
+        int qy0 = cover.y0 < band.y0 ? band.y0 : cover.y0;
+        int qy1 = cover.y1 > band.y1 ? band.y1 : cover.y1;
         int x, y;
 
         for (y = qy0; y < qy1; y++) {
             tiku_rgb_t *row;
-            long ey = (y < ry0 + cr) ? ry0 + cr
-                    : (y >= ry1 - cr) ? ry1 - cr - 1 : -1;
+            long ey = (y < cover.y0 + cr) ? cover.y0 + cr
+                    : (y >= cover.y1 - cr) ? cover.y1 - cr - 1 : -1;
 
             if (ey < 0) {
-                if (ry1 - cr > ry0 + cr) { y = ry1 - cr - 1; }
+                if (cover.y1 - cr > cover.y0 + cr) { y = cover.y1 - cr - 1; }
                 continue;
             }
             row = s->px + (long)y * stride;
             for (x = qx0; x < qx1; x++) {
-                long ex = (x < rx0 + cr) ? rx0 + cr
-                        : (x >= rx1 - cr) ? rx1 - cr - 1 : -1;
+                long ex = (x < cover.x0 + cr) ? cover.x0 + cr
+                        : (x >= cover.x1 - cr) ? cover.x1 - cr - 1 : -1;
                 long ccx, ccy;
 
                 if (ex < 0) {
-                    if (rx1 - cr > rx0 + cr) { x = rx1 - cr - 1; }
+                    if (cover.x1 - cr > cover.x0 + cr) {
+                        x = cover.x1 - cr - 1;
+                    }
                     continue;
                 }
                 ccx = x - ex; ccy = y - ey;
@@ -1189,36 +1223,12 @@ png_chunk(FILE *f, const char *tag, const unsigned char *data, size_t n)
     return (fwrite(crcbuf, 1, 4, f) == 4u) ? 0 : -1;
 }
 
-int
-tiku_surface_png(const tiku_surface_t *s, const char *path)
+/** @brief Serialize native RGB pixels as unfiltered PNG rows. */
+static void
+png_rows(const tiku_surface_t *s, unsigned char *raw, int nw, int nh)
 {
-    FILE *f;
-    unsigned char ihdr[13];
-    unsigned char *raw, *z;
-    size_t rawlen, zlen, off, i;
-    unsigned long a = 1, b = 0;
-    int y, nw, nh, rc = -1;
-
-    if (s == NULL || path == NULL) {
-        return -1;
-    }
-    f = fopen(path, "wb");
-    if (f == NULL) {
-        return -1;
-    }
-    {
-        int sc = scale_of(s);
-        nw = s->w * sc;
-        nh = s->h * sc;
-    }
-    rawlen = (size_t)nh * (1u + (size_t)nw * 3u);
-    raw = malloc(rawlen);
-    /* Stored deflate: 5 bytes of block header per 65535, plus zlib framing. */
-    zlen = 2u + rawlen + 5u * (rawlen / 65535u + 1u) + 4u;
-    z = malloc(zlen);
-    if (raw == NULL || z == NULL) {
-        goto done;
-    }
+    size_t off;
+    int y;
     off = 0;
     for (y = 0; y < nh; y++) {
         int x;
@@ -1230,6 +1240,14 @@ tiku_surface_png(const tiku_surface_t *s, const char *path)
             raw[off++] = (unsigned char)(c & 0xFFu);
         }
     }
+}
+
+/** @brief Write a stored-deflate zlib stream and its Adler checksum. */
+static size_t
+png_store(const unsigned char *raw, size_t rawlen, unsigned char *z)
+{
+    unsigned long a = 1, b = 0;
+    size_t i, off;
     for (i = 0; i < rawlen; i++) {
         a = (a + raw[i]) % 65521uL;
         b = (b + a) % 65521uL;
@@ -1253,7 +1271,40 @@ tiku_surface_png(const tiku_surface_t *s, const char *path)
     }
     png_be32(z + off, (b << 16) | a);
     off += 4u;
+    return off;
+}
 
+int
+tiku_surface_png(const tiku_surface_t *s, const char *path)
+{
+    FILE *f;
+    unsigned char ihdr[13];
+    unsigned char *raw, *z;
+    size_t rawlen, zlen, off;
+    int nw, nh, rc = -1;
+
+    if (s == NULL || path == NULL) {
+        return -1;
+    }
+    f = fopen(path, "wb");
+    if (f == NULL) {
+        return -1;
+    }
+    {
+        int sc = scale_of(s);
+        nw = s->w * sc;
+        nh = s->h * sc;
+    }
+    rawlen = (size_t)nh * (1u + (size_t)nw * 3u);
+    raw = malloc(rawlen);
+    /* Stored deflate: 5 bytes of block header per 65535, plus zlib framing. */
+    zlen = 2u + rawlen + 5u * (rawlen / 65535u + 1u) + 4u;
+    z = malloc(zlen);
+    if (raw == NULL || z == NULL) {
+        goto done;
+    }
+    png_rows(s, raw, nw, nh);
+    off = png_store(raw, rawlen, z);
     if (fwrite("\x89PNG\r\n\x1a\n", 1, 8, f) != 8u) {
         goto done;
     }

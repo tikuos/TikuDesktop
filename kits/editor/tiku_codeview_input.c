@@ -655,22 +655,33 @@ bar_press(tiku_codeview_t *v, int across, int x, int y)
     }
 }
 
+/** @brief How far the thumb of scrollbar @p bar can travel: the track
+ *         less both arrow ends and the thumb's own length. */
+static int
+bar_travel(tiku_codeview_t *v, tiku_rect_t bar, int across)
+{
+    int pos, frac;
+    tiku_rect_t thumb;
+
+    tiku_cv_bar_place(v, across, &pos, &frac);
+    thumb = tiku_ui_scrollbar_thumb(bar, (float)pos / 1000.0f,
+                                    (float)frac / 1000.0f, across);
+    return (across ? bar.w : bar.h) - 2 * (across ? bar.h : bar.w) -
+           (across ? thumb.w : thumb.h);
+}
+
 /** @brief The thumb held, the pointer at @p x, @p y: put the thumb's
  *         start where the pointer's grab says. */
 static void
 bar_drag(tiku_codeview_t *v, int x, int y)
 {
     int across = v->held_bar - 1;
-    tiku_rect_t bar = tiku_cv_bar(v, across), thumb;
-    int pos, frac, ends, travel, at;
+    tiku_rect_t bar = tiku_cv_bar(v, across);
+    int ends, travel, at;
     int64_t total, visible, value;
 
-    tiku_cv_bar_place(v, across, &pos, &frac);
-    thumb = tiku_ui_scrollbar_thumb(bar, (float)pos / 1000.0f,
-                                    (float)frac / 1000.0f, across);
     ends = across ? bar.h : bar.w;
-    travel = (across ? bar.w : bar.h) - 2 * ends -
-             (across ? thumb.w : thumb.h);
+    travel = bar_travel(v, bar, across);
     if (travel <= 0)
         return;
     at = (across ? x - bar.x : y - bar.y) - ends - v->grab;

@@ -110,6 +110,7 @@ cms_cbc(int kind, const unsigned char *key, size_t klen, int bits,
 
         tiku_rc4_init(&rc4, key, klen);
         tiku_rc4_crypt(&rc4, data, n);
+        cms_wipe(&rc4, sizeof rc4);
         return (long)n;
     }
     if (n == 0 || n % bs != 0 ||
@@ -118,6 +119,9 @@ cms_cbc(int kind, const unsigned char *key, size_t klen, int bits,
         ((kind == CMS_DES3 || kind == CMS_DES) &&
          tiku_des3_init(&des, key, kind == CMS_DES ? 8 : klen) != 0) ||
         (kind == CMS_DES && klen != 8)) {
+        cms_wipe(&aes, sizeof aes);
+        cms_wipe(&des, sizeof des);
+        cms_wipe(&rc2, sizeof rc2);
         return -1;
     }
     memcpy(chain, iv, bs);
@@ -129,8 +133,9 @@ cms_cbc(int kind, const unsigned char *key, size_t klen, int bits,
         for (i = 0; i < bs; i++) data[at + i] ^= chain[i];
         memcpy(chain, next, bs);
     }
-    memset(&aes, 0, sizeof aes);
-    memset(&des, 0, sizeof des);
+    cms_wipe(&aes, sizeof aes);
+    cms_wipe(&des, sizeof des);
+    cms_wipe(&rc2, sizeof rc2);
     pad = data[n - 1];
     if (pad == 0 || pad > bs) {
         return -1;
@@ -847,7 +852,10 @@ verify(const unsigned char *der, size_t n, const tiku_piece_t *content,
     int status;
 
     memset(out, 0, sizeof *out);
-    if (depth > CMS_DEPTH || signed_data(der, n, &sd, out) != 0) {
+    if (depth > CMS_DEPTH) {
+        return say(out, TIKU_SIG_BROKEN, "signature nesting exceeds the limit");
+    }
+    if (signed_data(der, n, &sd, out) != 0) {
         free(sd.inner);
         return out->status;
     }
@@ -1055,8 +1063,9 @@ tiku_cms_open(const tiku_key_t *key, const unsigned char *der, size_t n,
      * another, up to CMS_TRIES of the rest. */
     for (pass = 1; pass >= 0 && got < 0; pass--) {
         tiku_der_enter(&ris, &c);
-        while (got < 0 && tiku_der_take(&c, TIKU_DER_SEQUENCE, &ri) == 0 &&
-               (pass == 1 || tries++ < CMS_TRIES)) {
+        while (got < 0 && tiku_der_next(&c, &ri) == 0) {
+            if (!tiku_der_is(&ri, TIKU_DER_SEQUENCE)) continue;
+            if (pass != 1 && tries++ >= CMS_TRIES) break;
             got = recipient(key, &ri, pass, &eci, out);
         }
     }

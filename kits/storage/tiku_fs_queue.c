@@ -43,7 +43,7 @@ contains_trash(tiku_fs_t *fs, const char *path)
  * @brief Queue @p paths for @p op into @p dst, leaving out what the rules
  *        refuse, and check what the volumes allow.
  *
- * At most FS_QUEUE_MAX paths are taken.
+ * Requests above FS_QUEUE_MAX are rejected before queuing any path.
  *
  * @return 0 when the job starts, or -1 when the engine is busy or a volume
  *         refuses the whole job.
@@ -58,7 +58,9 @@ start(tiku_fs_t *fs, tiku_op_t op, const char *const *paths, int n,
         return -1;
     }
     if (n > FS_QUEUE_MAX) {
-        n = FS_QUEUE_MAX;
+        snprintf(fs->prog.error, sizeof fs->prog.error,
+                 "Too many paths in one operation (maximum %d)", FS_QUEUE_MAX);
+        return -1;
     }
     fs->prog.error[0] = '\0';
     fs->prog.skipped = 0;

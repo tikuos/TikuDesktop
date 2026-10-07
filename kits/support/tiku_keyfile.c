@@ -357,6 +357,22 @@ keep_cert(gather_t *g, const unsigned char *p, size_t n)
     g->cert_len[g->ncert++] = n;
 }
 
+/** @brief Whether decrypted bytes contain a complete PrivateKeyInfo. */
+static int
+private_key_info(const unsigned char *p, size_t n)
+{
+    tiku_der_t whole, e;
+    tiku_der_cursor_t c;
+    long version;
+    if (tiku_der_read(p, n, &whole) != 0 || whole.rawlen != n ||
+        !tiku_der_is(&whole, TIKU_DER_SEQUENCE)) return 0;
+    tiku_der_enter(&whole, &c);
+    return tiku_der_take(&c, TIKU_DER_INTEGER, &e) == 0 &&
+           tiku_der_int(&e, &version) == 0 && (version == 0 || version == 1) &&
+           tiku_der_take(&c, TIKU_DER_SEQUENCE, &e) == 0 && e.len > 0 &&
+           tiku_der_take(&c, TIKU_DER_OCTETS, &e) == 0 && e.len > 0;
+}
+
 /** @brief EncryptedPrivateKeyInfo @p e opened into @p g's key. */
 static void
 shrouded(gather_t *g, const tiku_der_t *e)
@@ -375,8 +391,12 @@ shrouded(gather_t *g, const tiku_der_t *e)
     if (n == -1) g->wrong = 1;
     if (n == -2) g->unsupported = 1;
     if (n > 0) {
-        keep_key(g, plain, (size_t)n, 0);
-        memset(plain, 0, (size_t)n);
+        if (private_key_info(plain, (size_t)n)) {
+            keep_key(g, plain, (size_t)n, 0);
+        } else {
+            g->wrong = 1;
+        }
+        cms_wipe(plain, (size_t)n);
     }
     free(plain);
 }
@@ -483,7 +503,9 @@ safe_part(gather_t *g, const tiku_der_t *ci)
 }
 
 /** @brief A PFX's MacData (RFC 7292 4): its digest, the MAC it holds,
- *         the salt and the rounds.  @return 0, or -1 for one not read. */
+ *         the salt and the rounds.  @p hash is 0 for a digest algorithm
+ *         cms_digest() does not name.  @return 0, or -1 for a MacData
+ *         not laid out as the RFC has it. */
 static int
 mac_data(const tiku_der_t *mac, int *hash, tiku_der_t *digest,
          tiku_der_t *salt, long *rounds)
@@ -502,13 +524,24 @@ mac_data(const tiku_der_t *mac, int *hash, tiku_der_t *digest,
     if (tiku_der_take(&di, TIKU_DER_SEQUENCE, &alg) != 0 ||
         tiku_der_take(&di, TIKU_DER_OCTETS, digest) != 0) return -1;
     tiku_der_enter(&alg, &c);
-    return tiku_der_take(&c, TIKU_DER_OID, &e) == 0 &&
-           (*hash = cms_digest(&e)) != 0 ? 0 : -1;
+    if (tiku_der_take(&c, TIKU_DER_OID, &e) != 0) return -1;
+    *hash = cms_digest(&e);
+    return 0;
 }
 
-/** @brief Whether the PFX's MacData @p mac holds over @p safe with @p g's
- *         password.  @return 1 it does, 0 it does not, -1 when it is of
- *         a kind this does not read. */
+/** @brief What mac_holds() found short of a MAC it could compare. */
+enum { MAC_UNREAD = -1, MAC_UNSUPPORTED = -2, MAC_BAD = -3 };
+
+/**
+ * @brief Whether the PFX's MacData @p mac holds over @p safe with @p g's
+ *        password.
+ *
+ * @return 1 it does; 0 it does not; MAC_UNREAD for a digest algorithm
+ *         this does not name, or when memory for the password is short;
+ *         MAC_UNSUPPORTED for more than KEY_ROUNDS iterations; MAC_BAD
+ *         for a MacData not laid out as RFC 7292 has it, a digest not
+ *         the length of its algorithm, or an iteration count below 1.
+ */
 static int
 mac_holds(const tiku_der_t *mac, const gather_t *g, const unsigned char *safe,
           size_t n)
@@ -519,8 +552,13 @@ mac_holds(const tiku_der_t *mac, const gather_t *g, const unsigned char *safe,
     int hash, ok;
 
     if (mac_data(mac, &hash, &digest, &salt, &rounds) != 0 ||
-        digest.len != tiku_hash(hash, "", 0, got) ||
-        (pwlen = bmp_password(g->password, g->none, &pw)) < 0) return -1;
+        rounds < 1) return MAC_BAD;
+    if (hash == 0) return MAC_UNREAD;
+    if (rounds > KEY_ROUNDS) return MAC_UNSUPPORTED;
+    if (digest.len != tiku_hash(hash, "", 0, got)) return MAC_BAD;
+    if ((pwlen = bmp_password(g->password, g->none, &pw)) < 0) {
+        return MAC_UNREAD;
+    }
     ok = p12_kdf(hash, pw, (size_t)pwlen, salt.body, salt.len, rounds, 3,
                  key, digest.len) == 0 &&
          tiku_hmac(hash, key, digest.len, safe, n, got) == digest.len &&
@@ -531,8 +569,17 @@ mac_holds(const tiku_der_t *mac, const gather_t *g, const unsigned char *safe,
     return ok;
 }
 
-/** @brief A PFX (PKCS#12) file: its MAC checked, then every part of its
- *         safe gathered.  @return TIKU_KEY_OK, _PASSWORD or _BAD. */
+/**
+ * @brief A PFX (PKCS#12) file: its MAC checked, then every part of its
+ *        safe gathered.
+ *
+ * @return TIKU_KEY_OK when the MAC holds, when there is none, or when it
+ *         is one mac_holds() cannot read (MAC_UNREAD), in which case the
+ *         safe is gathered unchecked; TIKU_KEY_PASSWORD when the MAC
+ *         does not hold; TIKU_KEY_UNSUPPORTED for a MAC of more than
+ *         KEY_ROUNDS iterations; TIKU_KEY_BAD for what is not a PFX or
+ *         whose MacData is malformed.
+ */
 static int
 pfx_read(const tiku_der_t *pfx, gather_t *g)
 {
@@ -553,6 +600,10 @@ pfx_read(const tiku_der_t *pfx, gather_t *g)
         (n = tiku_der_octets(&e, &safe)) < 0) return TIKU_KEY_BAD;
     if (tiku_der_take(&c, TIKU_DER_SEQUENCE, &mac) == 0) {
         held = mac_holds(&mac, g, safe, (size_t)n);
+        if (held == MAC_UNSUPPORTED || held == MAC_BAD) {
+            free(safe);
+            return held == MAC_BAD ? TIKU_KEY_BAD : TIKU_KEY_UNSUPPORTED;
+        }
         /* An empty password may mean no password bytes at all. */
         if (held == 0 && g->password[0] == 0) {
             g->none = 1;
@@ -685,6 +736,7 @@ key_numbers(const gather_t *g, tiku_key_t *k)
     num[3] = &k->rsa.p; num[4] = &k->rsa.q; num[5] = &k->rsa.dp;
     num[6] = &k->rsa.dq; num[7] = &k->rsa.qi;
     if ((k->num = malloc(pk.len)) == NULL) return TIKU_KEY_BAD;
+    k->num_len = pk.len;
     tiku_der_enter(&pk, &c);
     if (tiku_der_take(&c, TIKU_DER_INTEGER, &e) != 0) return TIKU_KEY_BAD;
     for (i = 0; i < 8; i++) {
@@ -698,7 +750,6 @@ key_numbers(const gather_t *g, tiku_key_t *k)
         num[i]->n = n;
         at += n;
     }
-    k->num_len = pk.len;
     return TIKU_KEY_OK;
 }
 
@@ -789,7 +840,7 @@ tiku_key_free(tiku_key_t *key)
     if (key == NULL) {
         return;
     }
-    if (key->num != NULL) memset(key->num, 0, key->num_len);
+    if (key->num != NULL) cms_wipe(key->num, key->num_len);
     free(key->num);
     free(key->cert);
     free(key);

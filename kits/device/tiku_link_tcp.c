@@ -38,6 +38,7 @@ struct tcp_link {
     size_t        out_len;
     size_t        out_cap;
     tiku_link_tcp_stats_t stats;
+    unsigned long reported_faults; /* lifetime faults already consumed */
 };
 
 /** @brief Write what waits, as far as the socket will take it. */
@@ -209,9 +210,9 @@ static int
 tcp_lost(tiku_link_t *l)
 {
     struct tcp_link *tl = l->ctx;
-    unsigned long n = tl->stats.faults;
+    unsigned long n = tl->stats.faults - tl->reported_faults;
 
-    tl->stats.faults = 0u;
+    tl->reported_faults = tl->stats.faults;
     return (int)n;
 }
 

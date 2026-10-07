@@ -97,8 +97,8 @@ int tiku_notify_diff(const tiku_model_t *was, int nwas,
 /**
  * @brief Collapse a burst of notices to one final notice per node.
  *
- * The newest model wins.  A CREATED stays CREATED whatever follows it, and
- * a MOVED keeps the first old path (PVL-094, PVN-054).
+ * The newest model wins. CREATED survives updates but not REMOVED, and
+ * MOVED keeps the first old path (PVL-094, PVN-054).
  */
 int tiku_evlist_coalesce(const tiku_evlist_t *in,
                              tiku_evlist_t *out);

@@ -147,19 +147,19 @@ segment(tiku_path_t *p, const fit_t *f, float ax, float ay, float bx,
     float x1 = at_x(f, bx), y1 = at_y(f, by);
     float dx = x1 - x0, dy = y1 - y0;
     float len = sqrtf(dx * dx + dy * dy);
-    float ux, uy, nx, ny, half = w * 0.5f;
+    float nx, ny, half = w * 0.5f;
 
     if (len < 0.0001f) {
         return;
     }
-    ux = dx / len;
-    uy = dy / len;
-    nx = -uy * half;
-    ny = ux * half;
-    x0 -= ux * half;
-    y0 -= uy * half;
-    x1 += ux * half;
-    y1 += uy * half;
+    dx /= len;
+    dy /= len;
+    nx = -dy * half;
+    ny = dx * half;
+    x0 -= dx * half;
+    y0 -= dy * half;
+    x1 += dx * half;
+    y1 += dy * half;
     tiku_path_move(p, x0 + nx, y0 + ny);
     tiku_path_line(p, x1 + nx, y1 + ny);
     tiku_path_line(p, x1 - nx, y1 - ny);

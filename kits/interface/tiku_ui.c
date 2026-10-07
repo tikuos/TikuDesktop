@@ -476,9 +476,10 @@ tiku_ui_textfield_scroll(tiku_surface_t *s, tiku_rect_t r,
         int lo = (sel_a < sel_b) ? sel_a : sel_b;
         int hi = (sel_a < sel_b) ? sel_b : sel_a;
 
+        tiku_text(s, f, r.x + 3 - scroll_px, ty, text,
+                  (state & TIKU_S_DISABLED)
+                  ? tiku_tint(PANEL, 1.30f) : TIKU_C_TEXT);
         if (hi > lo) {
-            /* The range's ground first, then the whole string over it in
-             * one pass. */
             tiku_rect_t hl;
 
             hl.x = r.x + 3 - scroll_px + text_offset(f, text, lo);
@@ -486,10 +487,16 @@ tiku_ui_textfield_scroll(tiku_surface_t *s, tiku_rect_t r,
             hl.w = text_offset(f, text, hi) - text_offset(f, text, lo);
             hl.h = r.h - 4;
             tiku_fill(s, hl, TIKU_C_SELECT);
+            right = hl.x + hl.w < inner.x + inner.w
+                      ? hl.x + hl.w : inner.x + inner.w;
+            hl.x = hl.x > inner.x ? hl.x : inner.x;
+            hl.w = right > hl.x ? right - hl.x : 0;
+            hl.y = inner.y;
+            hl.h = inner.h;
+            tiku_clip_set(s, hl);
+            tiku_text(s, f, r.x + 3 - scroll_px, ty, text, TIKU_C_SELTEXT);
+            tiku_clip_set(s, inner);
         }
-        tiku_text(s, f, r.x + 3 - scroll_px, ty, text,
-                       (state & TIKU_S_DISABLED)
-                       ? tiku_tint(PANEL, 1.30f) : TIKU_C_TEXT);
         if (caret >= 0) {
             tiku_vline(s, r.x + 3 - scroll_px + text_offset(f, text, caret),
                             r.y + 3, r.h - 6, TIKU_C_TEXT);
@@ -574,7 +581,7 @@ tiku_ui_gauge(tiku_surface_t *s, tiku_rect_t r, float fraction)
     int rec = tiku_gfx_rec_enter(s);
     tiku_rect_t fill;
 
-    if (fraction < 0.0f) { fraction = 0.0f; }
+    if (!(fraction >= 0.0f)) { fraction = 0.0f; }
     if (fraction > 1.0f) { fraction = 1.0f; }
     if (rec) {
         /* Recorded as its value in thousandths; the frame and the bar

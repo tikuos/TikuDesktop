@@ -29,6 +29,7 @@
  *         attribute names of their own, written on real nodes, because the
  *         xattr store can only write where a file is. */
 #define TIKU_ATTR_DESK_VIEW_STATE  "_trk/desk_viewstate"
+#define TIKU_ATTR_DESK_COLUMNS     "_trk/desk_columns"
 #define TIKU_ATTR_DISKS_VIEW_STATE "_trk/d_viewstate"
 #define TIKU_ATTR_DISKS_COLUMNS    "_trk/d_columns"
 /** @brief Where a trashed item came from, written under the item's path in

@@ -15,6 +15,8 @@
 #include "tiku_textview.h"
 #include "tiku_text_input.h"
 
+static void caret_clamp(tiku_textview_t *tv);
+
 /** @brief The byte offset of the codepoint before byte @p at of @p s. */
 static int text_previous(const char *s, int at)
 {
@@ -721,7 +723,11 @@ tiku_textview_insert_text(tiku_textview_t *tv, const char *text)
 
     /* A paste over a selection replaces it, and lands nothing when the
      * selection cannot go. */
-    if (tv == NULL || text == NULL || sel_delete(tv) < 0) {
+    if (tv == NULL || text == NULL || tv->nline <= 0) {
+        return;
+    }
+    caret_clamp(tv);
+    if (sel_delete(tv) < 0) {
         return;
     }
     ol = tv->cy;
@@ -927,6 +933,7 @@ tiku_textview_insert(tiku_textview_t *tv, char ch)
     if (tv == NULL || tv->nline <= 0) {
         return;
     }
+    caret_clamp(tv);
     /* Typing replaces what is selected, and types nothing when the
      * selection cannot go. */
     if (sel_delete(tv) < 0) {
@@ -956,9 +963,10 @@ tiku_textview_newline(tiku_textview_t *tv)
     tiku_textview_line_t *l;
     int tail, i;
 
-    if (tv == NULL) {
+    if (tv == NULL || tv->nline <= 0) {
         return;
     }
+    caret_clamp(tv);
     /* A return over a selection replaces it, and breaks nothing when the
      * selection cannot go. */
     if (sel_delete(tv) < 0) {
@@ -1184,9 +1192,13 @@ tiku_textview_text(const tiku_textview_t *tv, char *out, size_t max)
     for (i = 0; i < tv->nline; i++) {
         size_t len = (size_t)tv->line[i].len;
 
-        if (out != NULL && need + len + 1u < max) {
-            memcpy(out + need, tiku_textview_line(tv, i), len);
-            out[need + len] = '\n';
+        if (out != NULL && need < max && max - need > 1u) {
+            size_t copy = len < max - need - 1u ? len : max - need - 1u;
+
+            memcpy(out + need, tiku_textview_line(tv, i), copy);
+            if (copy == len && max - need - copy > 1u) {
+                out[need + copy] = '\n';
+            }
         }
         need += len + 1u;
     }

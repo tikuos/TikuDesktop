@@ -25,7 +25,7 @@ import sys
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DUMP = os.path.join(HERE, "glyphdump")
+DUMP = os.path.abspath(os.path.join(HERE, "../../../build/tools/glyphdump"))
 
 DEFAULT_TEXT = "AHOaeoxngpBRSMW0123.,"
 

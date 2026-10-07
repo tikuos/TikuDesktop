@@ -227,10 +227,9 @@ tiku_evlist_coalesce(const tiku_evlist_t *in,
             out->ev[out->count++] = *src;
             continue;
         }
-        /* The first lifecycle edge stays: a row created during the burst
-         * is still inserted and later notices only refresh its model, and a
-         * move keeps its first source path. */
-        if (dst->op == TIKU_EV_CREATED) {
+        /* Creation survives attribute updates, but not removal. A move
+         * keeps its first source path. */
+        if (dst->op == TIKU_EV_CREATED && src->op != TIKU_EV_REMOVED) {
             dst->model = src->model;
             dst->at = src->at;
             continue;

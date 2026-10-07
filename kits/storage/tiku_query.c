@@ -266,6 +266,7 @@ tiku_query_clear_scope(tiku_query_t *q)
 {
     if (q != NULL) {
         q->scope_count = 0;
+        memset(q->scope_was, 0, sizeof q->scope_was);
     }
 }
 
@@ -1068,6 +1069,8 @@ void
 tiku_query_stop(tiku_qrun_t *r)
 {
     if (r != NULL) {
+        free(r->old);
+        free(r->seen);
         free(r->fresh);
         free(r->results);
         free(r);

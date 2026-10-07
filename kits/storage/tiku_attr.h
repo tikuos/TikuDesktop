@@ -103,7 +103,7 @@ int tiku_attr_autoread(const char *meta, const char *path);
  * @brief Format @p raw for display, by what the descriptor says it means.
  *
  * The text is not fitted to a width; the caller fits it like any other
- * cell.
+ * cell. NULL displays "-" for an unread value; an empty string stays empty.
  *
  * @return Length written.
  */

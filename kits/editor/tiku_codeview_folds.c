@@ -48,10 +48,13 @@ word_is(const tiku_codeview_t *v, tiku_edit_pos_t pos, size_t n,
         return 0;
     for (i = 0; i < n; i++) {
         int b = tiku_editdoc_byte_at(v->doc, pos + (tiku_edit_pos_t)i);
+        int rule = (unsigned char)w[i];
 
         if (b >= 'a' && b <= 'z')
             b -= 'a' - 'A';
-        if (b != w[i])
+        if (rule >= 'a' && rule <= 'z')
+            rule -= 'a' - 'A';
+        if (b != rule)
             return 0;
     }
     return 1;
