@@ -57,6 +57,14 @@ blerelay=""
 if [ "$(uname)" = Darwin ]; then
     blerelay="$top/../tikuConsole/mac/ble_relay"
 fi
+# A line to the board's console.  A bare redirect opens the port at the
+# host's default rate (macOS resets a tty to 9600 at every open) and a J-Link
+# VCOM passes that rate to the board's UART, so the line arrived garbled;
+# the port is held open at the console's 115200 while the line goes out.
+board_say() {
+    ( exec 3<>"$TRK_PORT" && stty 115200 raw -echo <&3 &&
+      printf '%b' "$1" >&3 )
+}
 
 # Scripts that are also run through the OUT-OF-PROCESS driver, against the
 # shipping shell.  Keep this list to scripts written in the subset
@@ -645,7 +653,7 @@ for s in "$here"/*.script; do
         if [ -n "$boardble" ] && [ "$bin" = desktop ]; then
             printf '\n== %s (%s, board over the air)\n' "$(basename "$s")" "$bin"
             rm -rf "$deskhome"/.local/share/tracker/devices/*.state
-            printf 'write /gui/desk off\r\nwrite /gui/desk ble\r\n' > "$TRK_PORT"
+            board_say 'write /gui/desk off\r\nwrite /gui/desk ble\r\n'
             if [ -n "$blerelay" ]; then
                 "$blerelay" --name TIKU-DESK --to 127.0.0.1:7749 \
                     --discover-wait 120 --verbose \
@@ -666,7 +674,7 @@ for s in "$here"/*.script; do
                 -script "$s" || fails=$((fails+1))
             kill $relay 2>/dev/null
             wait $relay 2>/dev/null
-            printf 'write /gui/desk off\r\n' > "$TRK_PORT"
+            board_say 'write /gui/desk off\r\n'
         fi
     done
 done

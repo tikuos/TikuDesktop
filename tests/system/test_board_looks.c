@@ -53,6 +53,10 @@ void sync_folder_preferences(desktop_t *app) { (void)app; }
 
 static int nports;              /* how many ports the scan finds */
 
+/* The windows-only board's port; declared on every host, since its test
+ * closes it wherever it is compiled. */
+static int win_fd[2] = { -1, -1 };
+
 #ifdef __linux__
 /** @brief The scan: ports /dev/ttyLOOK0 up to nports, none of them real. */
 int
@@ -65,8 +69,6 @@ __wrap_tiku_tx_scan_serial(char out[][256], int max)
     }
     return i;
 }
-
-static int win_fd[2] = { -1, -1 };     /* the windows-only board's port */
 
 /** @brief A channel on the port of a board with windows and no shell: a
  *         link over one end of a socket pair. */
