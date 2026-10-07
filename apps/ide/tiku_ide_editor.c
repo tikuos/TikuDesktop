@@ -502,6 +502,11 @@ tiku_ide_edit_open(ide_t *st, const prow_t *row)
     }
     tiku_ide_project_paint(st);          /* the Window menu lists it */
     tiku_ide_project_publish(st);
+    for (i = 0; i < IDE_EDITS; i++) {
+        if (st->edit[i].surface != NULL && &st->edit[i] != e) {
+            tiku_ide_edit_publish(st, &st->edit[i]);
+        }
+    }
 }
 
 /** @brief Close page @p e, first asking whether to save it when it holds

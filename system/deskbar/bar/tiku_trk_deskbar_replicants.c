@@ -12,8 +12,7 @@
 #include "tiku_trk_deskbar_private.h"
 
 /**
- * @brief Write the tray's replicants to the session store, one label and
- *        path per line; a read-only or absent store is left alone.
+ * @brief Store each replicant's label, path and height on one line.
  */
 static void
 save_replicants(tiku_trk_deskbar_t *db)
@@ -28,8 +27,9 @@ save_replicants(tiku_trk_deskbar_t *db)
     }
     data[0] = '\0';
     for (i = 0; i < db->tray_count; i++) {
-        int n = snprintf(data + at, sizeof data - at, "%s\t%s\n",
-                         db->tray[i].label, db->tray[i].path);
+        int n = snprintf(data + at, sizeof data - at, "%s\t%s\t%d\n",
+                         db->tray[i].label, db->tray[i].path,
+                         db->tray[i].height);
         if (n < 0 || (size_t)n >= sizeof data - at) {
             break;
         }
@@ -250,10 +250,19 @@ tiku_trk_deskbar_load_replicants(tiku_trk_deskbar_t *db)
         if (next != NULL) { *next++ = '\0'; }
         tab = strchr(line, '\t');
         if (tab != NULL) {
+            char *height;
             *tab++ = '\0';
-            if (tab[0] != '\0' && db->backend->ops->stat(db->backend, tab,
+            height = strchr(tab, '\t');
+            if (height != NULL) *height++ = '\0';
+            if (tab[0] != '\0' && db->backend != NULL &&
+                db->backend->ops->stat != NULL &&
+                db->backend->ops->stat(db->backend, tab,
                                                           &(tiku_model_t){0}) == 0 &&
                 tiku_trk_deskbar_add_replicant(db, line, tab) >= 0) {
+                if (height != NULL) {
+                    (void)tiku_trk_deskbar_set_replicant_height(db, tab,
+                                                               atoi(height));
+                }
                 loaded++;
             }
         }

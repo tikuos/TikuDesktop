@@ -313,7 +313,10 @@ tiku_trk_poseview_copy_layout(const tiku_trk_poseview_t *v)
     if (v == NULL || v->column_count <= 0) {
         return 0;
     }
+    int serial = pv_g_layout_clip.serial;
+
     memset(&pv_g_layout_clip, 0, sizeof pv_g_layout_clip);
+    pv_g_layout_clip.serial = serial;
     for (i = 0; i < v->column_count && i < TIKU_TRK_COLUMNS_MAX; i++) {
         const tiku_trk_column_t *src = &v->columns[i];
 

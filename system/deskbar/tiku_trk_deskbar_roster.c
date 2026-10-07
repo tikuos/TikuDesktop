@@ -33,7 +33,8 @@ roster_note(const tiku_sys_process_t *process, void *ctx)
 
     /* The shell's own process is skipped: the shell seeds its entry as
      * TikuTracker, and listing it again would show it twice. */
-    if (strcmp(process->name, "desktop") == 0) {
+    if (strcmp(process->name, "desktop") == 0 ||
+        strcmp(process->name, "TikuDesktop") == 0) {
         return;
     }
     (void)tiku_trk_deskbar_add_team_pid(pass->deskbar, process->name,

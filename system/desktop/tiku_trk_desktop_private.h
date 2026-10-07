@@ -1172,8 +1172,6 @@ int device_scan(desktop_t *app);
 int mount_devices(desktop_t *app, const char *port, int baud, const char *at);
 int mount_landed(desktop_t *app, tiku_backend_t *dev, const char *port,
                  const char *at);
-int mount_one(desktop_t *app, const char *port, int baud, const char *at,
-              int probe);
 int port_is_mounted(desktop_t *app, const char *port);
 void boards_accept(desktop_t *app);
 void boards_unlisten(desktop_t *app);

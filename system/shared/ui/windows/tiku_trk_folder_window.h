@@ -38,6 +38,8 @@
 #define TIKU_TRK_ICONS_KEPT 192
 
 typedef struct tiku_trk_folder_window tiku_trk_folder_window_t;
+/** @brief Height of the list view's column-title strip, in logical pixels. */
+#define TIKU_TRK_TITLE_HEIGHT 20
 struct tiku_trk_folder_edit;
 struct tiku_trk_band_controller;
 struct tiku_trk_drag_target;

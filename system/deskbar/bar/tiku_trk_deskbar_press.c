@@ -380,6 +380,7 @@ db_click_leaf_menu(tiku_trk_deskbar_t *db, int x, int y, unsigned mods,
         if (x >= m.x && x < m.x + m.w && idx >= 0 && idx < db->leaf_count) {
             const tiku_trk_db_item_t *it = &db->leaf[idx];
 
+            if (!db_leaf_enabled(db, it)) return 1;
             switch (it->kind) {
             case TIKU_TRK_DB_ITEM_EXPAND:
                 db_open_sub(db, idx);

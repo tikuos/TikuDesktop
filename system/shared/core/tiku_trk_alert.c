@@ -161,7 +161,7 @@ tiku_trk_progress_hit_t
 tiku_trk_progress_hit(const tiku_trk_progress_win_t *p, int w, int x, int y,
                       int *row)
 {
-    int i, k;
+    int i, k, visible = 0;
 
     if (p == NULL || !p->open) {
         return TIKU_TRK_PROGRESS_HIT_NONE;
@@ -174,12 +174,13 @@ tiku_trk_progress_hit(const tiku_trk_progress_win_t *p, int w, int x, int y,
              k++) {
             int bx, by, bw, bh;
 
-            tiku_trk_progress_button_rect(i, k, w, &bx, &by, &bw, &bh);
+            tiku_trk_progress_button_rect(visible, k, w, &bx, &by, &bw, &bh);
             if (x >= bx && x < bx + bw && y >= by && y < by + bh) {
                 if (row != NULL) { *row = i; }
                 return (tiku_trk_progress_hit_t)k;
             }
         }
+        visible++;
     }
     return TIKU_TRK_PROGRESS_HIT_NONE;
 }

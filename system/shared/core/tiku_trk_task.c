@@ -346,14 +346,19 @@ tiku_trk_loop_next_due(const tiku_trk_loop_t *loop)
 {
     const tiku_trk_task_t *t;
     int64_t now = tiku_trk_now();
+    int64_t earliest = -1;
 
     for (t = (loop != NULL) ? loop->head : NULL; t != NULL; t = t->next) {
         if (t->dead) {
             continue;
         }
-        return (t->due > now) ? t->due - now : 0;
+        int64_t wait = (t->due > now) ? t->due - now : 0;
+
+        if (earliest < 0 || wait < earliest) {
+            earliest = wait;
+        }
     }
-    return -1;
+    return earliest;
 }
 
 int

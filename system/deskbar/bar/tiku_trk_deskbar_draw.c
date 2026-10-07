@@ -248,6 +248,10 @@ tip_box(const tiku_trk_deskbar_t *db)
     if (db->tip_y >= 0 && db->tip[0] != '\0') {
         b = tiku_ui_tip_size(db->tip);
         b.x = db->frame.x - b.w - 4;
+        if (db->dock == TIKU_TRK_DB_LEFT_EXPANDED ||
+            db->dock == TIKU_TRK_DB_LEFT_MINI) {
+            b.x = db->frame.x + db->frame.w + 4;
+        }
         b.y = db->tip_y;
         if (b.x < 0) { b.x = 0; }
     }
@@ -732,7 +736,7 @@ db_open_sub(tiku_trk_deskbar_t *db, int at)
     }
     db->leaf_hot = at; /* A click supersedes any previously hovered row. */
     it = &db->leaf[at];
-    if (it->kind != TIKU_TRK_DB_ITEM_EXPAND) {
+    if (it->kind != TIKU_TRK_DB_ITEM_EXPAND || !db_leaf_enabled(db, it)) {
         return;
     }
     switch (it->expand) {
@@ -995,8 +999,7 @@ db_draw_calendar(tiku_trk_deskbar_t *db, tiku_surface_t *s,
                  const tiku_font_t *f, const tiku_font_t *fb, tiku_rgb_t dark)
 {
     if (db->calendar_open) {
-        /* The heading's four quarters are the month and year steppers that
-         * db_click_calendar() answers; nothing here draws them. */
+        /* The four heading quarters step the month and year. */
         struct tm tmv;
         tiku_rect_t c = db_calendar_rect(db);
         int col, rowi, first, days;
@@ -1016,14 +1019,22 @@ db_draw_calendar(tiku_trk_deskbar_t *db, tiku_surface_t *s,
                                        TIKU_DARKEN_2));
         {
             char head[32];
-            snprintf(head, sizeof head, "%s %d",
-                     tiku_str((const char *[]){ "month.1", "month.2",
+            fit_label(fb, tiku_str((const char *[]){ "month.1", "month.2",
                        "month.3", "month.4", "month.5", "month.6", "month.7",
                        "month.8", "month.9", "month.10", "month.11",
-                       "month.12" }[tmv.tm_mon]), 1900 + tmv.tm_year);
+                       "month.12" }[tmv.tm_mon]), 60, head, sizeof head);
             (void)tiku_text_centered(s, fb,
-                (tiku_rect_t){ c.x, c.y + 2, c.w, 18 }, head,
-                TIKU_C_TEXT);
+                (tiku_rect_t){ c.x + 18, c.y + 2, 60, 18 }, head, TIKU_C_TEXT);
+            snprintf(head, sizeof head, "%d", 1900 + tmv.tm_year);
+            (void)tiku_text_centered(s, fb,
+                (tiku_rect_t){ c.x + 108, c.y + 2, 60, 18 }, head, TIKU_C_TEXT);
+            for (int button = 0; button < 4; button++) {
+                int x = c.x + (button < 2 ? 8 : 98) + (button % 2) * 78;
+                for (int d = 0; d < 4; d++) {
+                    int px = x + (button % 2 ? -d : d);
+                    tiku_vline(s, px, c.y + 10 - d, 2 * d + 1, TIKU_C_TEXT);
+                }
+            }
         }
         first = tmv.tm_wday;
         days = db_calendar_days(db->calendar_year, db->calendar_month);
@@ -1049,8 +1060,7 @@ db_draw_calendar(tiku_trk_deskbar_t *db, tiku_surface_t *s,
 }
 
 /**
- * @brief The tooltip, left of the bar at the height of what it is about,
- *        clamped at x 0.
+ * @brief The tooltip beside the bar, on the side facing the desktop.
  */
 void
 db_draw_tip(tiku_trk_deskbar_t *db, tiku_surface_t *s)
@@ -1059,11 +1069,7 @@ db_draw_tip(tiku_trk_deskbar_t *db, tiku_surface_t *s)
         /* The tip tiku_trk_deskbar_motion() chose: a cut or hidden name
          * (DB-032), a tray icon's tip, or the clock's long date
          * (DB-044). */
-        tiku_rect_t b = tiku_ui_tip_size(db->tip);
-
-        b.x = db->frame.x - b.w - 4;
-        b.y = db->tip_y;
-        if (b.x < 0) { b.x = 0; }
+        tiku_rect_t b = tip_box(db);
         tiku_ui_tip(s, b, db->tip);
     }
 }
@@ -1187,7 +1193,8 @@ db_draw_leaf_menu(tiku_trk_deskbar_t *db, tiku_surface_t *s,
         for (i = 0; i < db->leaf_count; i++) {
             /* A disabled row is redrawn dimmed over the menu's own
              * drawing (DB-004). */
-            if (db->leaf[i].kind == TIKU_TRK_DB_ITEM_DISABLED) {
+            if (db->leaf[i].kind != TIKU_TRK_DB_ITEM_SEP &&
+                !db_leaf_enabled(db, &db->leaf[i])) {
                 tiku_rect_t r = { m.x + 2, m.y + 2 + i * rowh,
                                        m.w - 4, rowh };
 
@@ -1394,19 +1401,33 @@ db_draw_tray(tiku_trk_deskbar_t *db, tiku_surface_t *s, const tiku_font_t *f,
     (*y) += db_tray_h(db) - db_tray_rows(db) * TRAY_ROW;
     for (i = 0; i < db_tray_rows(db); i++) {
         const tiku_trk_replicant_t *r = &db->tray[i];
+        tiku_rect_t saved_clip = s->clip;
+        tiku_rect_t ink = {db->frame.x, *y + (TRAY_ROW - r->height) / 2,
+                           db->frame.w, r->height};
         int ty = (*y) + (TRAY_ROW - f->height) / 2 + f->ascent;
         char val[32];
         int vw;
 
         /* Each reading is formatted by its node's description. */
         (void)tiku_attr_format(r->desc_known ? &r->desc : NULL,
-                                   r->valid ? r->value : "",
+                                   r->valid ? r->value : NULL,
                                    val, sizeof val);
         vw = tiku_text_width(f, val);
 
+        int right = ink.x + ink.w, bottom = ink.y + ink.h;
+        if (right > saved_clip.x + saved_clip.w)
+            right = saved_clip.x + saved_clip.w;
+        if (bottom > saved_clip.y + saved_clip.h)
+            bottom = saved_clip.y + saved_clip.h;
+        if (ink.x < saved_clip.x) ink.x = saved_clip.x;
+        if (ink.y < saved_clip.y) ink.y = saved_clip.y;
+        ink.w = right > ink.x ? right - ink.x : 0;
+        ink.h = bottom > ink.y ? bottom - ink.y : 0;
+        tiku_clip_set(s, ink);
         tiku_text(s, f, db->frame.x + 6, ty, r->label, TIKU_C_TEXT);
         tiku_text(s, f, db->frame.x + db->frame.w - 6 - vw, ty, val,
                        TIKU_C_TEXT);
+        tiku_clip_set(s, saved_clip);
         (*y) += TRAY_ROW;
     }
 }

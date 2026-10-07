@@ -27,9 +27,8 @@
 /* A file pick an application asked for; the shell keeps who asked in its
  * pending_pick. */
 #define TIKU_TRK_CMD_APP_PICK        1702
-/* The Info window icon's menu: recalculate a folder's size.  It has the
- * same value as TIKU_TRK_CMD_APP_PICK, which only the file panel sends. */
-#define TIKU_TRK_CMD_RECALC_SIZE     1702
+/* The Info window icon's menu: recalculate a folder's size. */
+#define TIKU_TRK_CMD_RECALC_SIZE     1707
 /* The Info window icon's menu: choose a broken link's new target. */
 #define TIKU_TRK_CMD_SET_LINK_TARGET 1703
 /* The Sounds window asked for a file from anywhere for one moment. */
@@ -113,12 +112,6 @@ typedef struct {
 #define TIKU_TRK_CMD_OPEN_WITH_BASE 900
 /** @brief The command range of the template rows. */
 #define TIKU_TRK_CMD_TEMPLATE_BASE 1200
-/**
- * @brief Edit templates.  The action table's enum also has a
- *        TIKU_TRK_CMD_EDIT_TEMPLATES; a file that includes this header gets
- *        this value.
- */
-#define TIKU_TRK_CMD_EDIT_TEMPLATES 1320
 /** @brief The command range of the "Add new submenu" rows. */
 #define TIKU_TRK_CMD_ADD_TEMPLATE_SUBMENU_BASE 1400
 

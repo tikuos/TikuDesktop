@@ -127,6 +127,17 @@ tiku_trk_deskbar_item_enabled(const tiku_trk_deskbar_t *db, int fixed)
 }
 
 int
+db_leaf_enabled(const tiku_trk_deskbar_t *db, const tiku_trk_db_item_t *item)
+{
+    int fixed = item->kind == TIKU_TRK_DB_ITEM_EXPAND
+        ? item->expand == TIKU_TRK_DB_EXPAND_SETTINGS
+        : item->command != TIKU_TRK_DB_OPEN_PATH;
+    return item->kind != TIKU_TRK_DB_ITEM_DISABLED &&
+           item->kind != TIKU_TRK_DB_ITEM_SEP &&
+           tiku_trk_deskbar_item_enabled(db, fixed);
+}
+
+int
 tiku_trk_deskbar_team_type(tiku_trk_deskbar_t *db, int i, const char *type)
 {
     if (db == NULL || i < 0 || i >= db->team_count || type == NULL ||

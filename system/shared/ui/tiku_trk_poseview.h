@@ -146,8 +146,9 @@ int tiku_trk_poseview_reload(tiku_trk_poseview_t *v);
 #define TIKU_TRK_LOAD_CHUNK 50
 
 /**
- * @brief The batch deadline, set after each batch: a batch begun after it
- *        has passed publishes a single row.
+ * @brief The time one tiku_trk_poseview_load_step() call may spend, in
+ *        microseconds, measured from that call's start: it stops after
+ *        the row that crosses it, or after TIKU_TRK_LOAD_CHUNK rows.
  */
 #define TIKU_TRK_LOAD_CHUNK_US 300000
 
@@ -170,7 +171,8 @@ int tiku_trk_poseview_load_begin(tiku_trk_poseview_t *v, int64_t now);
  * @brief Publish the next batch.
  *
  * The first row is published on its own, at once; each later call
- * publishes up to TIKU_TRK_LOAD_CHUNK rows.
+ * publishes up to TIKU_TRK_LOAD_CHUNK rows, stopping early at the row
+ * that takes the call past TIKU_TRK_LOAD_CHUNK_US.
  *
  * @return 1 while more remain or the lister's entries have not landed, 0
  *         when the load is complete.
@@ -254,7 +256,8 @@ int tiku_trk_poseview_set_results(tiku_trk_poseview_t *v,
  * Like tiku_trk_poseview_set_results(), but the view stays a folder view:
  * it keeps its mode, saves its state, and its poses are opened and dropped
  * on like any folder's.  The Desktop fills itself this way from several
- * directories.
+ * directories.  The models' parent directories are kept: a node created
+ * or moved in any of them belongs to the view.
  *
  * @return the rows now held, or -1.
  */
@@ -577,7 +580,7 @@ int tiku_trk_poseview_last_icon_mode(const tiku_trk_poseview_t *v);
  *
  * The Desktop's slot (MA-064): its view state and that of a folder window on
  * the same directory are kept apart.  Positions stay on each entry and the
- * column layout on the folder, as for any view.  Any non-empty @p key
+ * Desktop columns use their own attribute on the folder. Any non-empty @p key
  * selects the slot; its text is not read.  The root's Disks slot is applied
  * automatically.
  */

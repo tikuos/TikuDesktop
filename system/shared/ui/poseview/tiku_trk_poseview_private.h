@@ -37,6 +37,8 @@
 struct tiku_trk_poseview {
     tiku_backend_t *backend;            /* the store the listing comes from */
     char                path[TIKU_PATH_MAX];     /* the directory listed  */
+    char              (*model_dirs)[TIKU_PATH_MAX]; /* merged-list parents */
+    int                 model_dir_count;       /* parents in model_dirs */
 
     tiku_trk_pose_t    *poses;          /* every pose, in sort order        */
     int                 count;          /* poses[] in use                   */
@@ -176,8 +178,8 @@ struct tiku_trk_poseview {
     int                 awaiting;       /* the listing is being fetched     */
                                         /* elsewhere; nothing to publish    */
     int                 relisting;      /* a poll's re-list is out          */
-    int64_t             next_chunk;     /* when the next batch is due, in   */
-                                        /* µs; 0 = now                      */
+    int64_t             next_chunk;     /* 0 until a load's first step has  */
+                                        /* run; that step publishes one row */
     int64_t             pole_at;        /* when the pole becomes visible   */
     /* Bumped by every load.  A batch or a notice carrying an older one
      * belongs to a listing the window has since replaced (PVL-089). */

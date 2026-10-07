@@ -275,7 +275,9 @@ deskbar_pick_team(desktop_t *app, tiku_trk_db_pick_t *pick, int x, int y)
         /* Quit on an application's row closes its windows, as its own
          * Close does; the application ends with its last window. */
         if (pick->what == TIKU_TRK_DB_QUIT_TEAM &&
-            desktop_team_is_app(app, pick->team)) {
+            desktop_team_is_app(app, pick->team) &&
+            tiku_trk_deskbar_team_windows(app->deskbar, pick->team,
+                                           NULL, NULL) > 0) {
             team_close(app, pick->team);
             break;
         }

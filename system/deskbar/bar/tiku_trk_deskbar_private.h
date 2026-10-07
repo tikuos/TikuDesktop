@@ -48,6 +48,10 @@
 #define SEAM           1     /* kGutter: the unpainted row between items   */
 #define WIN_INDENT    22
 #define TRAY_ROW      18     /* kGutter + fMaxReplicantHeight + kGutter    */
+
+/** @brief Whether a menu entry accepts activation in the current drag state. */
+int db_leaf_enabled(const tiku_trk_deskbar_t *db,
+                    const tiku_trk_db_item_t *item);
 #define CLOCK_MIN     20
 #define PAD            4
 #define EXPANDER_W    13     /* ExpanderBounds()                           */

@@ -254,6 +254,11 @@ desktop_screenshot_tick(desktop_t *app)
     if (!app->shot_pending) {
         return;
     }
+    if (app->shot_pressed) {
+        app->shot_pressed = 0;
+        desktop_damage_all(app);
+        return;
+    }
     app->shot_pending = 0;
     app->shot_pressed = 0;
     desktop_shot_desk(app);
@@ -696,21 +701,20 @@ desktop_draw_strip_drag(desktop_t *app)
 {
     if (tiku_trk_titleview_tracking(&app->tstrip) == TIKU_TRK_TRACK_DRAG &&
         app->tstrip.removed) {
-        /* The outline is the column's width by the strip's height; 20
-         * is TITLE_HEIGHT of tiku_trk_folder_window.c, written out. */
+        /* The outline uses the folder's column-strip height. */
         int wds = app->tstrip.removed_width;
         int x0 = app->strip_ptr_x - wds / 2;
-        int y0 = app->strip_ptr_y - 20 /* TITLE_HEIGHT */ / 2;
+        int y0 = app->strip_ptr_y - TIKU_TRK_TITLE_HEIGHT / 2;
         int d;
 
         for (d = 0; d < wds; d += 4) {
             tiku_rect_t dash = { x0 + d, y0, 2, 1 };
 
             tiku_fill(app->surf, dash, TIKU_RGB(0, 0, 0));
-            dash.y = y0 + 20 /* TITLE_HEIGHT */ - 1;
+            dash.y = y0 + TIKU_TRK_TITLE_HEIGHT - 1;
             tiku_fill(app->surf, dash, TIKU_RGB(0, 0, 0));
         }
-        for (d = 0; d < 20 /* TITLE_HEIGHT */; d += 4) {
+        for (d = 0; d < TIKU_TRK_TITLE_HEIGHT; d += 4) {
             tiku_rect_t dash = { x0, y0 + d, 1, 2 };
 
             tiku_fill(app->surf, dash, TIKU_RGB(0, 0, 0));
@@ -719,4 +723,3 @@ desktop_draw_strip_drag(desktop_t *app)
         }
     }
 }
-

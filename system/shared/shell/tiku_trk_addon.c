@@ -9,6 +9,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <dirent.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -261,6 +262,7 @@ tiku_trk_addons_run_external(const tiku_trk_addon_t *addon,
     const char *argv[66];
     int argc = 0, i;
     pid_t pid;
+    int status;
 
     if (addon == NULL || !addon->external || addon->command[0] == '\0') {
         return -1;
@@ -278,11 +280,15 @@ tiku_trk_addons_run_external(const tiku_trk_addon_t *addon,
         return -1;
     }
     if (pid == 0) {
+        pid_t worker = fork();
+        if (worker < 0) _exit(127);
+        if (worker > 0) _exit(0);
         execvp(argv[0], (char *const *)(void *)argv);
         _exit(127);
     }
-    /* Reaped without waiting, so the window it ran from is not blocked
-     * (CW-038). */
-    (void)waitpid(pid, NULL, WNOHANG);
-    return 0;
+    /* Only the launch helper is waited for; the add-on runs independently. */
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) return -1;
+    }
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -1;
 }

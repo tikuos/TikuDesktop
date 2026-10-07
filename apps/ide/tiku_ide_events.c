@@ -200,11 +200,538 @@ page_key(ide_t *st, edit_t *e, const tiku_event_t *event, unsigned ch)
 }
 
 /**
+ * @brief Answer the open question with @p event: a key or a release over
+ *        a button picks an answer; a press or a move only repaints.
+ * @return 1 when the application is done (Discard on the close
+ *         question); otherwise 0.
+ */
+static int
+event_question(ide_t *st, const tiku_event_t *event)
+{
+    int at = -1;
+    int tag = st->ask.tag;
+
+    if (event->type == TIKU_EVENT_KEY_DOWN) {
+        at = tiku_alert_key(&st->ask, event->key);
+    } else if (event->type == TIKU_EVENT_POINTER_DOWN) {
+        /* A press arms the button under it; the answer comes when
+         * the press is let go over the same button. */
+        if (tiku_alert_press(&st->ask, st->ask_frame.w, st->ask_frame.h,
+                             event->x - st->ask_frame.x,
+                             event->y - st->ask_frame.y)) {
+            tiku_ide_project_paint(st);
+        }
+        return 0;
+    } else if (event->type == TIKU_EVENT_POINTER_MOVE) {
+        if (tiku_alert_track(&st->ask, st->ask_frame.w, st->ask_frame.h,
+                             event->x - st->ask_frame.x,
+                             event->y - st->ask_frame.y)) {
+            tiku_ide_project_paint(st);
+        }
+        return 0;
+    } else if (event->type == TIKU_EVENT_POINTER_UP) {
+        at = tiku_alert_release(&st->ask, st->ask_frame.w,
+                                st->ask_frame.h,
+                                event->x - st->ask_frame.x,
+                                event->y - st->ask_frame.y);
+        if (at < 0) {
+            tiku_ide_project_paint(st);      /* the button comes back up */
+            return 0;
+        }
+    }
+    if (at < 0) {
+        return 0;           /* not the question's key: ignored */
+    }
+    tiku_alert_reset(&st->ask);
+    if (tag == CMD_QUIT) {
+        edit_t *closing = tiku_ide_edit_of_id(st, st->closing_editor);
+        if (closing && at == 1) {
+            tiku_ide_recovery_release(closing, 1);
+            tiku_editdoc_saved(closing->doc,
+                               tiku_editdoc_state(closing->doc));
+            tiku_ide_edit_drop(st, closing);
+        } else if (closing && at == 2) {
+            if (tiku_ide_edit_save_or_ask(st, closing)) { tiku_ide_edit_drop(st, closing); }
+            else { tiku_ide_edit_paint(st, closing); }
+        }
+        tiku_ide_project_paint(st);
+        return 0;
+    }
+    if (tag == CMD_SAVE) {
+        edit_t *page = tiku_ide_edit_of_id(st, st->overwrite_editor);
+
+        if (page != NULL && at == 1) {
+            page->disk_known = 0;   /* Save Over It: skip the disk check */
+            (void)tiku_ide_edit_save(page);
+            tiku_ide_edit_publish(st, page);
+            tiku_ide_project_publish(st);
+        }
+        if (page != NULL) { tiku_ide_edit_paint(st, page); }
+        tiku_ide_project_paint(st);
+        return 0;
+    }
+    if (tag == CMD_SAVEBOARD) {
+        if (at == 1) { tiku_ide_upload_confirm(st); }
+        else { tiku_ide_project_paint(st); }
+        return 0;
+    }
+    if (at == 1) {
+        int i;
+        for (i = 0; i < IDE_EDITS; i++) {
+            tiku_ide_recovery_release(&st->edit[i], 1);
+        }
+        return 1;           /* Discard: the drafts go, the IDE closes */
+    }
+    tiku_ide_project_paint(st);      /* Cancel: nothing closes */
+    return 0;
+}
+
+/** @brief A resize of a page, the console, the Messages window or the
+ *         Project window: a surface of the new size, repainted.
+ *  @return 0. */
+static int
+event_resize(ide_t *st, edit_t *e, uint32_t window, const tiku_event_t *event)
+{
+    if (event->type == TIKU_EVENT_RESIZE &&
+        (window == st->con_id || window == st->msg_id)) {
+        /* The console or the Messages window was resized: a surface of
+         * the new size, never smaller than the window opened at. */
+        int con = window == st->con_id;
+        int least_w = con ? CON_W : MSG_W, least_h = con ? CON_H : MSG_H;
+        int w = (event->width > least_w) ? event->width : least_w;
+        int h = (event->height > least_h) ? event->height : least_h;
+        int *pw = con ? &st->con_w : &st->msg_w;
+        int *ph = con ? &st->con_h : &st->msg_h;
+        tiku_surface_t **ps = con ? &st->con_surface : &st->msg_surface;
+
+        if (*ps != NULL && (w != *pw || h != *ph)) {
+            tiku_surface_t *grown =
+                tiku_surface_new(w, h, con ? CON_BACK : TIKU_C_PANEL);
+
+            if (grown != NULL) {
+                tiku_surface_free(*ps);
+                *ps = grown;
+                *pw = w;
+                *ph = h;
+            }
+        }
+        if (con) { tiku_ide_console_paint(st); } else { tiku_ide_messages_paint(st); }
+        return 0;
+    }
+    if (window == st->proj_id && event->type == TIKU_EVENT_RESIZE) {
+        /* The Project window was resized: a surface of the new size,
+         * never smaller than the window opened at. */
+        int w = (event->width > IDE_W) ? event->width : IDE_W;
+        int h = (event->height > IDE_H) ? event->height : IDE_H;
+        tiku_surface_t *grown = (w != st->proj_w || h != st->proj_h)
+            ? tiku_surface_new(w, h, TIKU_C_PANEL) : NULL;
+
+        if (grown != NULL) {
+            tiku_surface_free(st->proj_surface);
+            st->proj_surface = grown;
+            st->proj_w = w;
+            st->proj_h = h;
+        }
+        tiku_ide_project_paint(st);
+        return 0;
+    }
+    if (e != NULL && event->type == TIKU_EVENT_RESIZE) {
+        /* The page was resized: it gets a surface of the new size, at
+         * least 360 x 100, and is repainted; the desktop sends a resize
+         * at each step of a drag. */
+        int w = (event->width > 360) ? event->width : 360;
+        int h = (event->height > 100) ? event->height : 100;
+        tiku_surface_t *grown = tiku_surface_new(w, h,
+                                                      TIKU_C_PANEL);
+
+        if (grown != NULL) {
+            if (h < 320) { tiku_ide_assist_close(e); e->finding = 0; }
+            if (h < 260) { e->debug_show = e->watch_focus = 0; }
+            tiku_surface_free(e->surface);
+            e->surface = grown;
+            e->w = w;
+            e->h = h;
+            tiku_ide_edit_paint(st, e);
+        }
+        return 0;
+    }
+    return 0;
+}
+
+/** @brief A press on page @p e: the find strip, the toolbar's buttons
+ *         and tools, the scrollbar, or the text itself.
+ *  @return 0. */
+static int
+event_editor_press(ide_t *st, edit_t *e, const tiku_event_t *event)
+{
+
+    tiku_rect_t save_b = TB_SAVE;
+    tiku_rect_t run_b = TB_RUN;
+    uint64_t generation = tiku_editdoc_generation(e->doc);
+
+    if (tiku_ide_search_pointer(e, event->x, event->y)) {
+        tiku_ide_edit_paint(st, e);
+        tiku_ide_edit_publish(st, e);
+        tiku_ide_project_publish(st);
+        return 0;
+    }
+    if (event->x >= save_b.x && event->x < save_b.x + save_b.w &&
+        event->y >= save_b.y && event->y < save_b.y + save_b.h) {
+        (void)tiku_ide_edit_save_or_ask(st, e);
+        tiku_ide_edit_paint(st, e);
+        tiku_ide_edit_publish(st, e);
+        tiku_ide_project_publish(st);
+        return 0;
+    }
+    if (e->lang == TIKU_SYNTAX_BASIC &&
+        event->x >= run_b.x && event->x < run_b.x + run_b.w &&
+        event->y >= run_b.y && event->y < run_b.y + run_b.h) {
+        /* A run reads the file on disk, so the button saves
+         * first.  The page is painted after the run starts, so
+         * the Stop tool shows red. */
+        (void)tiku_ide_edit_save(e);
+        tiku_ide_run_file_where(st, e->path);
+        tiku_ide_edit_paint(st, e);
+        tiku_ide_edit_publish(st, e);
+        tiku_ide_project_publish(st);
+        return 0;
+    }
+    {
+        /* Undo, redo and find. */
+        tiku_rect_t u = TB_UNDO, r = TB_REDO, fb = TB_FIND;
+        int hit_u = event->x >= u.x && event->x < u.x + u.w &&
+                    event->y >= u.y && event->y < u.y + u.h;
+        int hit_r = event->x >= r.x && event->x < r.x + r.w &&
+                    event->y >= r.y && event->y < r.y + r.h;
+        int hit_f = event->x >= fb.x && event->x < fb.x + fb.w &&
+                    event->y >= fb.y && event->y < fb.y + fb.h;
+
+        if (hit_u || hit_r) {
+            if (tiku_ide_edit_clip(st, e, hit_u ? CMD_UNDO : CMD_REDO)) {
+                tiku_ide_edit_reveal(e);
+                tiku_ide_edit_paint(st, e);
+                tiku_ide_edit_publish(st, e);
+                tiku_ide_project_publish(st);
+            }
+            return 0;
+        }
+        if (hit_f) {
+            if (e->finding) { e->finding = 0; }
+            else { tiku_ide_search_open(e, 0); }
+            tiku_ide_edit_paint(st, e);
+            return 0;
+        }
+    }
+    {
+        int tool = tiku_ide_tb_tool_at(e, event->x, event->y);
+
+        if (tool == 2 && e->lang == TIKU_SYNTAX_BASIC) {
+            /* Stop. */
+            tiku_ide_run_stop(st, "? the run was stopped by hand");
+            tiku_ide_edit_paint(st, e);
+            return 0;
+        }
+        if (tool == 1 && e->lang == TIKU_SYNTAX_C) {
+            /* On a C page the Run tool is Build; the page is
+             * saved first. */
+            (void)tiku_ide_edit_save(e);
+            tiku_ide_edit_paint(st, e);
+            tiku_ide_edit_publish(st, e);
+            tiku_ide_build_project(st);
+            tiku_ide_project_publish(st);
+            return 0;
+        }
+        if (tool == 6 && e->lang == TIKU_SYNTAX_BASIC) {
+            tiku_ide_renumber_basic(e);
+            tiku_ide_edit_paint(st, e);
+            tiku_ide_edit_publish(st, e);
+            tiku_ide_project_publish(st);
+            return 0;
+        }
+    }
+    /* A press on the scrollbar above or below the thumb pages the
+     * view toward the press, and a press on the thumb takes hold
+     * of it; the caret stays where it is. */
+    if (event->x >= e->w - PAGE_SB &&
+        event->y >= tiku_ide_edit_page_top(e) && event->y < tiku_ide_edit_page_bottom(e)) {
+        tiku_rect_t sb, thumb;
+
+        if (!tiku_ide_edit_scrollbar(e, &sb, &thumb)) {
+            return 0;           /* no scrollbar is shown */
+        }
+        if (event->y >= thumb.y && event->y < thumb.y + thumb.h) {
+            e->sb_held = 1;
+            e->sb_grab = event->y - thumb.y;
+        } else {
+            int64_t rows = tiku_codeview_rows_visible(e->view);
+            int64_t step = (rows > 1) ? rows - 1 : 1;
+
+            tiku_codeview_scroll_to(e->view,
+                tiku_codeview_top(e->view) +
+                    ((event->y < thumb.y) ? -step : step),
+                tiku_codeview_left(e->view));
+        }
+        tiku_ide_edit_paint(st, e);
+        return 0;
+    }
+    /* Not a button or the bar: the page itself, where the view
+     * puts the caret, selects words and lines and starts a drag,
+     * and a shown list or tip takes the presses on it. */
+    if (event->x < e->w - PAGE_SB &&
+        event->y >= tiku_ide_edit_page_top(e) &&
+        event->y < tiku_ide_edit_page_bottom(e) &&
+        tiku_codeview_event(e->view, event)) {
+        tiku_ide_edit_paint(st, e);
+        if (tiku_codeview_status(e->view) == TIKU_EDIT_OK &&
+            tiku_editdoc_generation(e->doc) != generation) {
+            tiku_ide_edit_publish(st, e);
+            tiku_ide_project_publish(st);
+        }
+    }
+    return 0;
+
+}
+
+/** @brief An event for page @p e: the debugger, the assist list and a
+ *         held scrollbar first, then presses, moves and keys.
+ *  @return what the command or key handler returns; otherwise 0. */
+static int
+event_editor(ide_t *st, edit_t *e, uint32_t window, const tiku_event_t *event)
+{
+    unsigned ch = (unsigned char)event->text[0];
+
+    if (tiku_ide_debug_event(st, e, event)) {
+        tiku_ide_edit_paint(st, e); tiku_ide_edit_publish(st, e); tiku_ide_project_publish(st);
+        return 0;
+    }
+    if ((event->type == TIKU_EVENT_KEY_DOWN ||
+         event->type == TIKU_EVENT_KEY_UP) && modifier_key(event->key)) {
+        /* A modifier alone may make the jump target under the
+         * pointer live or not; nothing moves. */
+        if (tiku_codeview_event(e->view, event)) {
+            tiku_ide_edit_paint(st, e);
+        }
+        return 0;
+    }
+    if (event->type == TIKU_EVENT_KEY_DOWN && (event->modifiers & TIKU_MOD_CMD)) {
+        int cmd = event->key == 'd' ? CMD_DEBUG : event->key == 'b' ? CMD_BREAKPOINT :
+                  event->key == 'j' ? CMD_DEBUG_STEP : event->key == 'g' ? CMD_DEBUG_CONT :
+                  event->key == 'k' ? CMD_HELPWORD : event->key == ' ' ? CMD_COMPLETE : 0;
+        if (cmd && e->lang == TIKU_SYNTAX_BASIC) { return tiku_ide_pick(st, window, cmd); }
+    }
+    if (tiku_ide_debug_locked(st, e)) {
+        int tool = tiku_ide_tb_tool_at(e, event->x, event->y);
+        if (event->type == TIKU_EVENT_POINTER_DOWN && tool >= 0 && tool != 2) { return 0; }
+        if (event->type == TIKU_EVENT_KEY_DOWN &&
+            !(event->key >= TIKU_KEY_UP && event->key <= TIKU_KEY_PAGE_DOWN) &&
+            !((event->modifiers & TIKU_MOD_CMD) && (event->key == 'c' || event->key == '.')) &&
+            !(e->assist_open && event->key == TIKU_KEY_ESCAPE)) { return 0; }
+    }
+    if (tiku_ide_assist_event(e, event)) {
+        tiku_ide_edit_paint(st, e); tiku_ide_edit_publish(st, e); tiku_ide_project_publish(st);
+        return 0;
+    }
+    if (event->type == TIKU_EVENT_POINTER_DOWN)
+        return event_editor_press(st, e, event);
+    if (event->type == TIKU_EVENT_POINTER_MOVE && e->sb_held) {
+        /* The held thumb's start follows the pointer, less where in
+         * the thumb the press was, within the track between the
+         * arrows. */
+        tiku_rect_t sb, thumb;
+
+        if (tiku_ide_edit_scrollbar(e, &sb, &thumb)) {
+            int64_t total, rows, top;
+            int travel = sb.h - 2 * sb.w - thumb.h;
+            int at = event->y - (sb.y + sb.w) - e->sb_grab;
+
+            tiku_codeview_extent(e->view, 0, &total, &rows, &top);
+            if (travel > 0) {
+                at = at < 0 ? 0 : at > travel ? travel : at;
+                tiku_codeview_scroll_to(e->view,
+                    ((int64_t)at * (total - rows) + travel / 2) / travel,
+                    tiku_codeview_left(e->view));
+                tiku_ide_edit_paint(st, e);
+            }
+        }
+        return 0;
+    }
+    if (event->type == TIKU_EVENT_POINTER_MOVE) {
+        /* Over the toolbar, a tip names the tool under the pointer;
+         * it goes when the pointer leaves the tool. */
+        int tool = (event->y < TOOLBAR_H)
+                       ? tiku_ide_tb_tool_at(e, event->x, event->y) : -1;
+
+        if (tool != e->tip) {
+            e->tip = tool;
+            tiku_ide_edit_paint(st, e);
+        }
+        /* A drag from a page press extends the selection to the
+         * pointer; a move with no such press is not the view's. */
+        if (tiku_codeview_event(e->view, event)) {
+            tiku_ide_edit_paint(st, e);
+        }
+        return 0;
+    }
+    if (event->type == TIKU_EVENT_POINTER_UP && e->sb_held) {
+        e->sb_held = 0;             /* the thumb is let go */
+        return 0;
+    }
+    if (event->type == TIKU_EVENT_POINTER_UP) {
+        if (tiku_codeview_event(e->view, event)) {
+            tiku_ide_edit_paint(st, e);
+        }
+        return 0;
+    }
+    if (ch == 0u) {
+        ch = event->key;
+    }
+    if (event->type != TIKU_EVENT_KEY_DOWN) {
+        return 0;
+    }
+    return page_key(st, e, event, ch);
+}
+
+/** @brief An event for the console (wheel scrolling, Cmd-C stopping a
+ *         run, keys answering a prompt) or the Messages window (the list,
+ *         Return following a message, keys answering a prompt).
+ *  @return 0. */
+static int
+event_output(ide_t *st, uint32_t window, const tiku_event_t *event)
+{
+    if (window == st->con_id && st->con_surface != NULL) {
+        if (event->type == TIKU_EVENT_WHEEL) {
+            int rows = (st->con_h - STRIP_H - 2 * MARGIN) /
+                       (tiku_font_mono(0)->height + 2);
+            int top = (st->con_top >= 0) ? st->con_top : st->ncon - rows;
+
+            top += (event->dy > 0) ? 3 : -3;
+            if (top >= st->ncon - rows) {
+                st->con_top = -1;   /* at the tail: follow new output */
+            } else {
+                st->con_top = (top < 0) ? 0 : top;
+            }
+            tiku_ide_console_paint(st);
+            return 0;
+        }
+        if (event->type != TIKU_EVENT_KEY_DOWN) {
+            return 0;
+        }
+        if ((event->modifiers & TIKU_MOD_CMD) &&
+            (event->key == 'c' || event->text[0] == 'c') && st->running) {
+            if (st->local_debug) {
+                tiku_ide_run_stop(st, "? debug run stopped");
+                tiku_ide_console_paint(st);
+            } else if (st->services->board_stop != NULL) {
+                (void)st->services->board_stop(st->services->ctx);
+            }
+            return 0;
+        }
+        if (st->asking) {
+            unsigned ch = (unsigned char)event->text[0];
+
+            if (ch == 0u) {
+                ch = event->key;
+            }
+            if (event->key == TIKU_KEY_RETURN) {
+                /* The prompt and the answer go into the console. */
+                char echo[200];
+
+                snprintf(echo, sizeof echo, "%.80s%.119s", st->ask_prompt,
+                         st->answer.text);
+                tiku_ide_console_take(st, echo, 0);
+                if (st->local_debug) {
+                    (void)tiku_board_basic_input(st->local_debug, st->answer.text);
+                } else if (st->services->board_input != NULL) {
+                    (void)st->services->board_input(st->services->ctx,
+                                                    st->answer.text);
+                }
+                st->asking = 0;
+                tiku_field_stop(&st->answer);
+            } else if (event->key == TIKU_KEY_BACKSPACE) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_BACKSPACE, 0,
+                                     '\0');
+            } else if (event->key == TIKU_KEY_LEFT) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_LEFT, 0, '\0');
+            } else if (event->key == TIKU_KEY_RIGHT) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_RIGHT, 0, '\0');
+            } else if (ch >= 32u && ch < 127u &&
+                       !(event->modifiers & TIKU_MOD_CMD)) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_CHAR, 0,
+                                     (char)ch);
+            }
+            tiku_ide_console_paint(st);
+        }
+        return 0;
+    }
+    if (window == st->msg_id && st->msg_surface != NULL) {
+        tiku_rect_t body = { MARGIN, MARGIN, st->msg_w - 2 * MARGIN,
+                             st->msg_h - STRIP_H - 2 * MARGIN };
+        if (event->type == TIKU_EVENT_POINTER_DOWN) {
+            tiku_list_click(&st->msg_list,
+                            tiku_list_at(&st->msg_list, tiku_inset(body, 2),
+                                         event->x, event->y),
+                            event->modifiers);
+            tiku_ide_messages_show(st);
+            return 0;
+        }
+        if (st->asking) {
+            /* The strip has the keys while the program waits: Return
+             * sends the line, the rest edit it. */
+            unsigned ch = (unsigned char)event->text[0];
+
+            if (ch == 0u) {
+                ch = event->key;
+            }
+            if (event->key == TIKU_KEY_RETURN) {
+                if (st->local_debug) {
+                    (void)tiku_board_basic_input(st->local_debug,
+                                                 st->answer.text);
+                } else if (st->services->board_input != NULL) {
+                    (void)st->services->board_input(st->services->ctx,
+                                                    st->answer.text);
+                }
+                st->asking = 0;
+                tiku_field_stop(&st->answer);
+            } else if (event->key == TIKU_KEY_BACKSPACE) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_BACKSPACE, 0,
+                                     '\0');
+            } else if (event->key == TIKU_KEY_LEFT) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_LEFT, 0, '\0');
+            } else if (event->key == TIKU_KEY_RIGHT) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_RIGHT, 0, '\0');
+            } else if (ch >= 32u && ch < 127u &&
+                       !(event->modifiers & TIKU_MOD_CMD)) {
+                (void)tiku_field_key(&st->answer, TIKU_FIELD_CHAR, 0,
+                                     (char)ch);
+            }
+            tiku_ide_messages_paint(st);
+            return 0;
+        }
+        if (event->key == TIKU_KEY_RETURN) {
+            /* Return follows the chosen message; the list leaves Return
+             * to the application. */
+            tiku_ide_message_follow(st);
+            return 0;
+        }
+        if (tiku_list_key(&st->msg_list, event->key, event->modifiers,
+                          tiku_inset(body, 2))) {
+            tiku_ide_messages_show(st);
+        }
+        return 0;
+    }
+    return 0;
+}
+
+/**
  * @brief Route an event to the window it is for: a page, the console, the
  *        Messages window, the splash, the About box or the Project window.
  *
  * While the Project window has a question open, its events answer the
- * question and other windows' events are dropped.
+ * question and other windows' events are dropped.  Text input, the
+ * splash, the About box and the Project window's list are handled here;
+ * the question, resizes, pages, the console and the Messages window go
+ * to event_question(), event_resize(), event_editor() and
+ * event_output().
  *
  * @return 1 when the application is done (Discard on the close
  *         question); otherwise 0.
@@ -282,496 +809,26 @@ tiku_ide_event(void *state, uint32_t window, const tiku_event_t *event)
         return 0;
     }
     if (window == st->splash_id && st->splash_surface != NULL) {
-        tiku_ide_splash_drop(st);        /* a key or a click closes it */
+        if (event->type == TIKU_EVENT_KEY_DOWN ||
+            event->type == TIKU_EVENT_POINTER_DOWN) {
+            tiku_ide_splash_drop(st);
+        }
         return 0;
     }
-    if (st->ask.open && window == st->proj_id) {
-        int at = -1;
-        int tag = st->ask.tag;
-
-        if (event->type == TIKU_EVENT_KEY_DOWN) {
-            at = tiku_alert_key(&st->ask, event->key);
-        } else if (event->type == TIKU_EVENT_POINTER_DOWN) {
-            /* A press arms the button under it; the answer comes when
-             * the press is let go over the same button. */
-            if (tiku_alert_press(&st->ask, st->ask_frame.w, st->ask_frame.h,
-                                 event->x - st->ask_frame.x,
-                                 event->y - st->ask_frame.y)) {
-                tiku_ide_project_paint(st);
-            }
-            return 0;
-        } else if (event->type == TIKU_EVENT_POINTER_MOVE) {
-            if (tiku_alert_track(&st->ask, st->ask_frame.w, st->ask_frame.h,
-                                 event->x - st->ask_frame.x,
-                                 event->y - st->ask_frame.y)) {
-                tiku_ide_project_paint(st);
-            }
-            return 0;
-        } else if (event->type == TIKU_EVENT_POINTER_UP) {
-            at = tiku_alert_release(&st->ask, st->ask_frame.w,
-                                    st->ask_frame.h,
-                                    event->x - st->ask_frame.x,
-                                    event->y - st->ask_frame.y);
-            if (at < 0) {
-                tiku_ide_project_paint(st);      /* the button comes back up */
-                return 0;
-            }
-        }
-        if (at < 0) {
-            return 0;           /* not the question's key: ignored */
-        }
-        tiku_alert_reset(&st->ask);
-        if (tag == CMD_QUIT) {
-            edit_t *closing = tiku_ide_edit_of_id(st, st->closing_editor);
-            if (closing && at == 1) {
-                tiku_ide_recovery_release(closing, 1);
-                tiku_editdoc_saved(closing->doc,
-                                   tiku_editdoc_state(closing->doc));
-                tiku_ide_edit_drop(st, closing);
-            } else if (closing && at == 2) {
-                if (tiku_ide_edit_save_or_ask(st, closing)) { tiku_ide_edit_drop(st, closing); }
-                else { tiku_ide_edit_paint(st, closing); }
-            }
-            tiku_ide_project_paint(st);
-            return 0;
-        }
-        if (tag == CMD_SAVE) {
-            edit_t *page = tiku_ide_edit_of_id(st, st->overwrite_editor);
-
-            if (page != NULL && at == 1) {
-                page->disk_known = 0;   /* Save Over It: skip the disk check */
-                (void)tiku_ide_edit_save(page);
-                tiku_ide_edit_publish(st, page);
-                tiku_ide_project_publish(st);
-            }
-            if (page != NULL) { tiku_ide_edit_paint(st, page); }
-            tiku_ide_project_paint(st);
-            return 0;
-        }
-        if (tag == CMD_SAVEBOARD) {
-            if (at == 1) { tiku_ide_upload_confirm(st); }
-            else { tiku_ide_project_paint(st); }
-            return 0;
-        }
-        if (at == 1) {
-            int i;
-            for (i = 0; i < IDE_EDITS; i++) {
-                tiku_ide_recovery_release(&st->edit[i], 1);
-            }
-            return 1;           /* Discard: the drafts go, the IDE closes */
-        }
-        tiku_ide_project_paint(st);      /* Cancel: nothing closes */
-        return 0;
-    }
+    if (st->ask.open && window == st->proj_id)
+        return event_question(st, event);
     if (st->ask.open) { return 0; }
-    if (event->type == TIKU_EVENT_RESIZE &&
-        (window == st->con_id || window == st->msg_id)) {
-        /* The console or the Messages window was resized: a surface of
-         * the new size, never smaller than the window opened at. */
-        int con = window == st->con_id;
-        int least_w = con ? CON_W : MSG_W, least_h = con ? CON_H : MSG_H;
-        int w = (event->width > least_w) ? event->width : least_w;
-        int h = (event->height > least_h) ? event->height : least_h;
-        int *pw = con ? &st->con_w : &st->msg_w;
-        int *ph = con ? &st->con_h : &st->msg_h;
-        tiku_surface_t **ps = con ? &st->con_surface : &st->msg_surface;
-
-        if (*ps != NULL && (w != *pw || h != *ph)) {
-            tiku_surface_t *grown =
-                tiku_surface_new(w, h, con ? CON_BACK : TIKU_C_PANEL);
-
-            if (grown != NULL) {
-                tiku_surface_free(*ps);
-                *ps = grown;
-                *pw = w;
-                *ph = h;
-            }
-        }
-        if (con) { tiku_ide_console_paint(st); } else { tiku_ide_messages_paint(st); }
-        return 0;
-    }
-    if (window == st->proj_id && event->type == TIKU_EVENT_RESIZE) {
-        /* The Project window was resized: a surface of the new size,
-         * never smaller than the window opened at. */
-        int w = (event->width > IDE_W) ? event->width : IDE_W;
-        int h = (event->height > IDE_H) ? event->height : IDE_H;
-        tiku_surface_t *grown = (w != st->proj_w || h != st->proj_h)
-            ? tiku_surface_new(w, h, TIKU_C_PANEL) : NULL;
-
-        if (grown != NULL) {
-            tiku_surface_free(st->proj_surface);
-            st->proj_surface = grown;
-            st->proj_w = w;
-            st->proj_h = h;
-        }
-        tiku_ide_project_paint(st);
-        return 0;
-    }
-    if (e != NULL && event->type == TIKU_EVENT_RESIZE) {
-        /* The page was resized: it gets a surface of the new size, at
-         * least 360 x 100, and is repainted; the desktop sends a resize
-         * at each step of a drag. */
-        int w = (event->width > 360) ? event->width : 360;
-        int h = (event->height > 100) ? event->height : 100;
-        tiku_surface_t *grown = tiku_surface_new(w, h,
-                                                      TIKU_C_PANEL);
-
-        if (grown != NULL) {
-            if (h < 320) { tiku_ide_assist_close(e); e->finding = 0; }
-            if (h < 260) { e->debug_show = e->watch_focus = 0; }
-            tiku_surface_free(e->surface);
-            e->surface = grown;
-            e->w = w;
-            e->h = h;
-            tiku_ide_edit_paint(st, e);
-        }
-        return 0;
-    }
+    if (event->type == TIKU_EVENT_RESIZE)
+        return event_resize(st, e, window, event);
     if (e != NULL && event->type == TIKU_EVENT_WHEEL) {
         /* The wheel scrolls the page and leaves the caret where it is. */
         (void)tiku_codeview_event(e->view, event);
         tiku_ide_edit_paint(st, e);
         return 0;
     }
-    if (e != NULL) {
-        /* An event for a page. */
-        unsigned ch = (unsigned char)event->text[0];
-
-        if (tiku_ide_debug_event(st, e, event)) {
-            tiku_ide_edit_paint(st, e); tiku_ide_edit_publish(st, e); tiku_ide_project_publish(st);
-            return 0;
-        }
-        if ((event->type == TIKU_EVENT_KEY_DOWN ||
-             event->type == TIKU_EVENT_KEY_UP) && modifier_key(event->key)) {
-            /* A modifier alone may make the jump target under the
-             * pointer live or not; nothing moves. */
-            if (tiku_codeview_event(e->view, event)) {
-                tiku_ide_edit_paint(st, e);
-            }
-            return 0;
-        }
-        if (event->type == TIKU_EVENT_KEY_DOWN && (event->modifiers & TIKU_MOD_CMD)) {
-            int cmd = event->key == 'd' ? CMD_DEBUG : event->key == 'b' ? CMD_BREAKPOINT :
-                      event->key == 'j' ? CMD_DEBUG_STEP : event->key == 'g' ? CMD_DEBUG_CONT :
-                      event->key == 'k' ? CMD_HELPWORD : event->key == ' ' ? CMD_COMPLETE : 0;
-            if (cmd && e->lang == TIKU_SYNTAX_BASIC) { return tiku_ide_pick(st, window, cmd); }
-        }
-        if (tiku_ide_debug_locked(st, e)) {
-            int tool = tiku_ide_tb_tool_at(e, event->x, event->y);
-            if (event->type == TIKU_EVENT_POINTER_DOWN && tool >= 0 && tool != 2) { return 0; }
-            if (event->type == TIKU_EVENT_KEY_DOWN &&
-                !(event->key >= TIKU_KEY_UP && event->key <= TIKU_KEY_PAGE_DOWN) &&
-                !((event->modifiers & TIKU_MOD_CMD) && (event->key == 'c' || event->key == '.')) &&
-                !(e->assist_open && event->key == TIKU_KEY_ESCAPE)) { return 0; }
-        }
-        if (tiku_ide_assist_event(e, event)) {
-            tiku_ide_edit_paint(st, e); tiku_ide_edit_publish(st, e); tiku_ide_project_publish(st);
-            return 0;
-        }
-        if (event->type == TIKU_EVENT_POINTER_DOWN) {
-            tiku_rect_t save_b = TB_SAVE;
-            tiku_rect_t run_b = TB_RUN;
-            uint64_t generation = tiku_editdoc_generation(e->doc);
-
-            if (tiku_ide_search_pointer(e, event->x, event->y)) {
-                tiku_ide_edit_paint(st, e);
-                tiku_ide_edit_publish(st, e);
-                tiku_ide_project_publish(st);
-                return 0;
-            }
-            if (event->x >= save_b.x && event->x < save_b.x + save_b.w &&
-                event->y >= save_b.y && event->y < save_b.y + save_b.h) {
-                (void)tiku_ide_edit_save_or_ask(st, e);
-                tiku_ide_edit_paint(st, e);
-                tiku_ide_edit_publish(st, e);
-                tiku_ide_project_publish(st);
-                return 0;
-            }
-            if (e->lang == TIKU_SYNTAX_BASIC &&
-                event->x >= run_b.x && event->x < run_b.x + run_b.w &&
-                event->y >= run_b.y && event->y < run_b.y + run_b.h) {
-                /* A run reads the file on disk, so the button saves
-                 * first.  The page is painted after the run starts, so
-                 * the Stop tool shows red. */
-                (void)tiku_ide_edit_save(e);
-                tiku_ide_run_file_where(st, e->path);
-                tiku_ide_edit_paint(st, e);
-                tiku_ide_edit_publish(st, e);
-                tiku_ide_project_publish(st);
-                return 0;
-            }
-            {
-                /* Undo, redo and find. */
-                tiku_rect_t u = TB_UNDO, r = TB_REDO, fb = TB_FIND;
-                int hit_u = event->x >= u.x && event->x < u.x + u.w &&
-                            event->y >= u.y && event->y < u.y + u.h;
-                int hit_r = event->x >= r.x && event->x < r.x + r.w &&
-                            event->y >= r.y && event->y < r.y + r.h;
-                int hit_f = event->x >= fb.x && event->x < fb.x + fb.w &&
-                            event->y >= fb.y && event->y < fb.y + fb.h;
-
-                if (hit_u || hit_r) {
-                    if (tiku_ide_edit_clip(st, e, hit_u ? CMD_UNDO : CMD_REDO)) {
-                        tiku_ide_edit_reveal(e);
-                        tiku_ide_edit_paint(st, e);
-                        tiku_ide_edit_publish(st, e);
-                        tiku_ide_project_publish(st);
-                    }
-                    return 0;
-                }
-                if (hit_f) {
-                    if (e->finding) { e->finding = 0; }
-                    else { tiku_ide_search_open(e, 0); }
-                    tiku_ide_edit_paint(st, e);
-                    return 0;
-                }
-            }
-            {
-                int tool = tiku_ide_tb_tool_at(e, event->x, event->y);
-
-                if (tool == 2 && e->lang == TIKU_SYNTAX_BASIC) {
-                    /* Stop. */
-                    tiku_ide_run_stop(st, "? the run was stopped by hand");
-                    tiku_ide_edit_paint(st, e);
-                    return 0;
-                }
-                if (tool == 1 && e->lang == TIKU_SYNTAX_C) {
-                    /* On a C page the Run tool is Build; the page is
-                     * saved first. */
-                    (void)tiku_ide_edit_save(e);
-                    tiku_ide_edit_paint(st, e);
-                    tiku_ide_edit_publish(st, e);
-                    tiku_ide_build_project(st);
-                    tiku_ide_project_publish(st);
-                    return 0;
-                }
-                if (tool == 6 && e->lang == TIKU_SYNTAX_BASIC) {
-                    tiku_ide_renumber_basic(e);
-                    tiku_ide_edit_paint(st, e);
-                    tiku_ide_edit_publish(st, e);
-                    tiku_ide_project_publish(st);
-                    return 0;
-                }
-            }
-            /* A press on the scrollbar above or below the thumb pages the
-             * view toward the press, and a press on the thumb takes hold
-             * of it; the caret stays where it is. */
-            if (event->x >= e->w - PAGE_SB &&
-                event->y >= tiku_ide_edit_page_top(e) && event->y < tiku_ide_edit_page_bottom(e)) {
-                tiku_rect_t sb, thumb;
-
-                if (!tiku_ide_edit_scrollbar(e, &sb, &thumb)) {
-                    return 0;           /* no scrollbar is shown */
-                }
-                if (event->y >= thumb.y && event->y < thumb.y + thumb.h) {
-                    e->sb_held = 1;
-                    e->sb_grab = event->y - thumb.y;
-                } else {
-                    int64_t rows = tiku_codeview_rows_visible(e->view);
-                    int64_t step = (rows > 1) ? rows - 1 : 1;
-
-                    tiku_codeview_scroll_to(e->view,
-                        tiku_codeview_top(e->view) +
-                            ((event->y < thumb.y) ? -step : step),
-                        tiku_codeview_left(e->view));
-                }
-                tiku_ide_edit_paint(st, e);
-                return 0;
-            }
-            /* Not a button or the bar: the page itself, where the view
-             * puts the caret, selects words and lines and starts a drag,
-             * and a shown list or tip takes the presses on it. */
-            if (event->x < e->w - PAGE_SB &&
-                event->y >= tiku_ide_edit_page_top(e) &&
-                event->y < tiku_ide_edit_page_bottom(e) &&
-                tiku_codeview_event(e->view, event)) {
-                tiku_ide_edit_paint(st, e);
-                if (tiku_codeview_status(e->view) == TIKU_EDIT_OK &&
-                    tiku_editdoc_generation(e->doc) != generation) {
-                    tiku_ide_edit_publish(st, e);
-                    tiku_ide_project_publish(st);
-                }
-            }
-            return 0;
-        }
-        if (event->type == TIKU_EVENT_POINTER_MOVE && e->sb_held) {
-            /* The held thumb's start follows the pointer, less where in
-             * the thumb the press was, within the track between the
-             * arrows. */
-            tiku_rect_t sb, thumb;
-
-            if (tiku_ide_edit_scrollbar(e, &sb, &thumb)) {
-                int64_t total, rows, top;
-                int travel = sb.h - 2 * sb.w - thumb.h;
-                int at = event->y - (sb.y + sb.w) - e->sb_grab;
-
-                tiku_codeview_extent(e->view, 0, &total, &rows, &top);
-                if (travel > 0) {
-                    at = at < 0 ? 0 : at > travel ? travel : at;
-                    tiku_codeview_scroll_to(e->view,
-                        ((int64_t)at * (total - rows) + travel / 2) / travel,
-                        tiku_codeview_left(e->view));
-                    tiku_ide_edit_paint(st, e);
-                }
-            }
-            return 0;
-        }
-        if (event->type == TIKU_EVENT_POINTER_MOVE) {
-            /* Over the toolbar, a tip names the tool under the pointer;
-             * it goes when the pointer leaves the tool. */
-            int tool = (event->y < TOOLBAR_H)
-                           ? tiku_ide_tb_tool_at(e, event->x, event->y) : -1;
-
-            if (tool != e->tip) {
-                e->tip = tool;
-                tiku_ide_edit_paint(st, e);
-            }
-            /* A drag from a page press extends the selection to the
-             * pointer; a move with no such press is not the view's. */
-            if (tiku_codeview_event(e->view, event)) {
-                tiku_ide_edit_paint(st, e);
-            }
-            return 0;
-        }
-        if (event->type == TIKU_EVENT_POINTER_UP && e->sb_held) {
-            e->sb_held = 0;             /* the thumb is let go */
-            return 0;
-        }
-        if (event->type == TIKU_EVENT_POINTER_UP) {
-            if (tiku_codeview_event(e->view, event)) {
-                tiku_ide_edit_paint(st, e);
-            }
-            return 0;
-        }
-        if (ch == 0u) {
-            ch = event->key;
-        }
-        if (event->type != TIKU_EVENT_KEY_DOWN) {
-            return 0;
-        }
-        return page_key(st, e, event, ch);
-    }
-        if (window == st->con_id && st->con_surface != NULL) {
-        if (event->type == TIKU_EVENT_WHEEL) {
-            int rows = (st->con_h - STRIP_H - 2 * MARGIN) /
-                       (tiku_font_mono(0)->height + 2);
-            int top = (st->con_top >= 0) ? st->con_top : st->ncon - rows;
-
-            top += (event->dy > 0) ? 3 : -3;
-            if (top >= st->ncon - rows) {
-                st->con_top = -1;   /* at the tail: follow new output */
-            } else {
-                st->con_top = (top < 0) ? 0 : top;
-            }
-            tiku_ide_console_paint(st);
-            return 0;
-        }
-        if (event->type != TIKU_EVENT_KEY_DOWN) {
-            return 0;
-        }
-        if ((event->modifiers & TIKU_MOD_CMD) &&
-            (event->key == 'c' || event->text[0] == 'c') && st->running) {
-            if (st->local_debug) {
-                tiku_ide_run_stop(st, "? debug run stopped");
-                tiku_ide_console_paint(st);
-            } else if (st->services->board_stop != NULL) {
-                (void)st->services->board_stop(st->services->ctx);
-            }
-            return 0;
-        }
-        if (st->asking) {
-            unsigned ch = (unsigned char)event->text[0];
-
-            if (ch == 0u) {
-                ch = event->key;
-            }
-            if (event->key == TIKU_KEY_RETURN) {
-                /* The prompt and the answer go into the console. */
-                char echo[200];
-
-                snprintf(echo, sizeof echo, "%s%s", st->ask_prompt,
-                         st->answer.text);
-                tiku_ide_console_take(st, echo, 0);
-                if (st->local_debug) {
-                    (void)tiku_board_basic_input(st->local_debug, st->answer.text);
-                } else if (st->services->board_input != NULL) {
-                    (void)st->services->board_input(st->services->ctx,
-                                                    st->answer.text);
-                }
-                st->asking = 0;
-                tiku_field_stop(&st->answer);
-            } else if (event->key == TIKU_KEY_BACKSPACE) {
-                (void)tiku_field_key(&st->answer, TIKU_FIELD_BACKSPACE, 0,
-                                     '\0');
-            } else if (event->key == TIKU_KEY_LEFT) {
-                (void)tiku_field_key(&st->answer, TIKU_FIELD_LEFT, 0, '\0');
-            } else if (event->key == TIKU_KEY_RIGHT) {
-                (void)tiku_field_key(&st->answer, TIKU_FIELD_RIGHT, 0, '\0');
-            } else if (ch >= 32u && ch < 127u &&
-                       !(event->modifiers & TIKU_MOD_CMD)) {
-                (void)tiku_field_key(&st->answer, TIKU_FIELD_CHAR, 0,
-                                     (char)ch);
-            }
-            tiku_ide_console_paint(st);
-        }
-        return 0;
-    }
-    if (window == st->msg_id && st->msg_surface != NULL) {
-        tiku_rect_t body = { MARGIN, MARGIN, st->msg_w - 2 * MARGIN,
-                                  st->msg_h - STRIP_H - 2 * MARGIN };
-        if (event->type == TIKU_EVENT_POINTER_DOWN) {
-            tiku_list_click(&st->msg_list,
-                            tiku_list_at(&st->msg_list, tiku_inset(body, 2),
-                                         event->x, event->y),
-                            event->modifiers);
-            tiku_ide_messages_show(st);
-            return 0;
-        }
-                if (st->asking) {
-            /* The strip has the keys while the program waits: Return
-             * sends the line, the rest edit it. */
-            unsigned ch = (unsigned char)event->text[0];
-
-            if (ch == 0u) {
-                ch = event->key;
-            }
-            if (event->key == TIKU_KEY_RETURN) {
-                if (st->local_debug) {
-                    (void)tiku_board_basic_input(st->local_debug,
-                                                 st->answer.text);
-                } else if (st->services->board_input != NULL) {
-                    (void)st->services->board_input(st->services->ctx,
-                                                    st->answer.text);
-                }
-                st->asking = 0;
-                tiku_field_stop(&st->answer);
-            } else if (event->key == TIKU_KEY_BACKSPACE) {
-                (void)tiku_field_key(&st->answer, TIKU_FIELD_BACKSPACE, 0,
-                                     '\0');
-            } else if (event->key == TIKU_KEY_LEFT) {
-                (void)tiku_field_key(&st->answer, TIKU_FIELD_LEFT, 0, '\0');
-            } else if (event->key == TIKU_KEY_RIGHT) {
-                (void)tiku_field_key(&st->answer, TIKU_FIELD_RIGHT, 0, '\0');
-            } else if (ch >= 32u && ch < 127u &&
-                       !(event->modifiers & TIKU_MOD_CMD)) {
-                (void)tiku_field_key(&st->answer, TIKU_FIELD_CHAR, 0,
-                                     (char)ch);
-            }
-            tiku_ide_messages_paint(st);
-            return 0;
-        }
-        if (event->key == TIKU_KEY_RETURN) {
-            /* Return follows the chosen message; the list leaves Return
-             * to the application. */
-            tiku_ide_message_follow(st);
-            return 0;
-        }
-        if (tiku_list_key(&st->msg_list, event->key, event->modifiers,
-                          tiku_inset(body, 2))) {
-            tiku_ide_messages_show(st);
-        }
-        return 0;
-    }
+    if (e != NULL) return event_editor(st, e, window, event);
+    if (window == st->con_id || window == st->msg_id)
+        return event_output(st, window, event);
     if (window != st->proj_id) {
         return 0;
     }

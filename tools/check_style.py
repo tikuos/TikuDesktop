@@ -84,7 +84,7 @@ EXEMPT_HEADER = {
 LONG_LINES_CEILING = 82
 
 TYPE_LINE = re.compile(r'^(static\s+)?(inline\s+)?[A-Za-z_][A-Za-z0-9_ \t*]*\**$')
-ONELINE = re.compile(r'^(static\s+)?((?:inline\s+)?[A-Za-z_][\w \t*]*?[ *])([a-z_][a-z0-9_]*)\([^;{]*\)\s*$')
+ONELINE = re.compile(r'^(static\s+)?((?:inline\s+)?[A-Za-z_][\w \t*]*?[ *])([a-z_][a-z0-9_]*)\(')
 BANNER = re.compile(r'^/\*[-=]{20,}\*/$')
 # a section label: a one-line comment padded out to the banner's width
 LABEL = re.compile(r'^/\* .*\s{2,}\*/$')
@@ -101,7 +101,8 @@ def is_doc_end(line):
     # the split tool's markers around generated declarations document nothing
     if 'forward declarations' in t or 'Used before they are defined' in t:
         return False
-    return t.endswith('*/') and not BANNER.match(t) and not LABEL.match(t)
+    return (t.endswith('*/') and not BANNER.match(t) and not LABEL.match(t)
+            and not DIVIDER.match(t) and not GROUP_LABEL.match(t))
 DECL = re.compile(r'^    ((?:const\s+)?(?:unsigned\s+|struct\s+)?[A-Za-z_]\w*(?:\s+\*+|\s+|\s*\*+\s*))(.*);\s*$')
 
 
@@ -126,12 +127,18 @@ def functions(lines):
         one = ONELINE.match(lines[i])
         if m and i > 0 and TYPE_LINE.match(lines[i - 1].rstrip()) and lines[i - 1].strip():
             name, static, k = m.group(1), lines[i - 1].startswith('static'), i - 2
-        elif one and i + 1 < n and lines[i + 1] == '{':
+        elif one:
             name, static, k = one.group(3), lines[i].startswith('static'), i - 1
         else:
             i += 1
             continue
-        j = i
+        body = i
+        while body < n and lines[body] != '{' and ';' not in lines[body]:
+            body += 1
+        if body == n or lines[body] != '{':
+            i += 1
+            continue
+        j = body
         while j < n and lines[j] != '}':
             j += 1
         while k >= 0 and lines[k].strip() == '':

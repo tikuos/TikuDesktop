@@ -967,6 +967,21 @@ pv_notify_changed(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
 }
 
 /**
+ * @brief Whether a node in directory @p dir belongs in this view: a query
+ *        takes every directory, a listing takes its own path and the
+ *        parents in model_dirs.
+ */
+static int
+accepts_parent(const tiku_trk_poseview_t *v, const char *dir)
+{
+    if (v->is_query || strcmp(dir, v->path) == 0) return 1;
+    for (int i = 0; i < v->model_dir_count; i++) {
+        if (strcmp(dir, v->model_dirs[i]) == 0) return 1;
+    }
+    return 0;
+}
+
+/**
  * @brief A node moved: renamed in place, arrived from elsewhere, or gone
  *        elsewhere.
  * @return 1 with the flags in @p out when the notice was handled as a
@@ -988,10 +1003,9 @@ pv_notify_moved(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
         as_new.op = TIKU_EV_CREATED;
         *out = tiku_trk_poseview_notify(v, &as_new); return 1;
     }
-    /* Moved out of this folder is a removal -- unless this is a query,
-     * whose rows have no single parent, so every move is a rename in
-     * place. */
-    if (!v->is_query && strcmp(e->dir, v->path) != 0) {
+    /* A move to a directory the view does not list is a removal; a query
+     * lists every directory, so there a move is a rename in place. */
+    if (!accepts_parent(v, e->dir)) {
         /* A removal, returning 0 so the caller rebuilds the filtered list
          * as it does after any other removal. */
         pv_remove_pose(v, (*at));
@@ -1103,7 +1117,7 @@ pv_notify_created(tiku_trk_poseview_t *v, const tiku_node_event_t *e,
     v->menu_generation++;
     /* A file made in another folder, or one already listed, adds no
      * row. */
-    if (!v->is_query && strcmp(e->dir, v->path) != 0) {
+    if (!accepts_parent(v, e->dir)) {
         *out = TIKU_TRK_NOTIFY_NOTHING; return 1;
     }
     if (pv_pose_index(v, e->path) >= 0) {
@@ -1369,4 +1383,3 @@ tiku_trk_poseview_relist_landed(tiku_trk_poseview_t *v, int gen,
     free(is);
     return flags;
 }
-

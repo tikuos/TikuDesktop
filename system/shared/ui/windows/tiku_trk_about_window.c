@@ -674,7 +674,7 @@ paint_layout(about_state_t *st, int x, int y, int i, int m)
         /* The whole estate in its hue, lightened; the used part over it
          * in the hue itself. */
         tiku_fill(st->surface, (tiku_rect_t){ px, bar.y, w, bar.h },
-                  tiku_tint(hue, 1.55f));
+                  tiku_tint(hue, 0.45f));
         if (!st->dev[i].lay[m].est[k].live && sz > 0UL) {
             tiku_fill(st->surface, (tiku_rect_t){ px, bar.y, w, bar.h },
                       hue);         /* region size; occupancy not reported */
@@ -694,8 +694,8 @@ paint_layout(about_state_t *st, int x, int y, int i, int m)
         laid += sz;
     }
     /* A sunken edge: shadow above and left, light below and right. */
-    tiku_bevel(st->surface, bar, tiku_tint(TIKU_C_PANEL, 0.72f),
-               tiku_tint(TIKU_C_PANEL, 1.18f));
+    tiku_bevel(st->surface, bar, tiku_tint(TIKU_C_PANEL, 1.18f),
+               tiku_tint(TIKU_C_PANEL, 0.72f));
     fmt_bytes(total, a, sizeof a);
     tiku_text(st->surface, plain, bar.x + bar.w + 8, y + plain->ascent, a,
               TIKU_C_TEXT);

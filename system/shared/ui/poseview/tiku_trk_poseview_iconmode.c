@@ -984,7 +984,13 @@ tiku_trk_poseview_select_rect(tiku_trk_poseview_t *v, int x0, int y0, int x1,
         }
         tiku_trk_poseview_pose_rect(v, p, &px, &py, &pw, &ph);
         inside = (px + pw > lox && px < hix && py + ph > loy && py < hiy);
-        if (v->band) {
+        if (v->single_only) {
+            pv_set_selected(p, inside && hits == 0);
+            if (inside && hits == 0) {
+                hits++;
+                v->pivot = p->index;
+            }
+        } else if (v->band) {
             /* PVS-027: within a band each pose is toggled against what it
              * was when the band started, so a pose the band leaves again
              * returns to that state. */

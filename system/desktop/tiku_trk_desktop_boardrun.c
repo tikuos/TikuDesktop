@@ -363,7 +363,14 @@ desktop_board_mcu(desktop_t *app, const char *name, char *out, size_t max)
     if (id == NULL) {
         return 0;
     }
-    return (int)strlen(strncpy(out, id->mcu, max - 1u));
+    size_t n = strnlen(id->mcu, sizeof id->mcu);
+
+    if (n >= max) {
+        n = max - 1u;
+    }
+    memcpy(out, id->mcu, n);
+    out[n] = '\0';
+    return (int)n;
 }
 
 

@@ -95,6 +95,7 @@ static void hex_menus(hex_app_t *p)
         snprintf(menus.menu[0].item[i].label, sizeof menus.menu[0].item[i].label, "%s", labels[i]);
         menus.menu[0].item[i].command = commands[i];
         menus.menu[0].item[i].sc = (char)keys[i];
+        menus.menu[0].item[i].mods = keys[i] ? TIKU_MOD_CMD : 0;
         menus.menu[0].item[i].enabled = i == 1 ? p->model.changed != 0 : 1;
     }
     p->services->menus(p->services->ctx, p->id, &menus);

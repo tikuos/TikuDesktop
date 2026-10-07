@@ -188,7 +188,7 @@ pv_cell_text_at(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p, int field,
         if (tiku_model_is_container(&p->model)) {
             return "";
         }
-        (void)tiku_attr_format(&p->desc, p->value_valid ? p->value : "",
+        (void)tiku_attr_format(&p->desc, p->value_valid ? p->value : NULL,
                                    buf, max);
         return buf;
     case TIKU_TRK_COL_CAP:
@@ -298,10 +298,12 @@ tiku_trk_poseview_cell_text(tiku_trk_poseview_t *v, const tiku_trk_pose_t *p,
     if (v == NULL || p == NULL || buf == NULL || max == 0u) {
         return "";
     }
-    /* The key mixes the model's facts and the value a cell is formatted
-     * from; text read from the state store (attribute columns, Original
-     * path) is not in it.  The width is matched separately, so a resized
-     * column never reuses text fitted for its old width. */
+    /* State-store text can change without a model notification. */
+    if (field == TIKU_TRK_COL_ORIGINAL || field >= TIKU_TRK_COL_ATTR_BASE) {
+        v->cell_cache_misses++;
+        return pv_cell_text_at(v, p, field, column_width_of(v, field), buf, max);
+    }
+    /* Model facts and width determine the remaining cached cells. */
 #define MIX_CELL(value) do { \
         uint64_t _x = (uint64_t)(value); \
         key ^= _x; key *= UINT64_C(1099511628211); \

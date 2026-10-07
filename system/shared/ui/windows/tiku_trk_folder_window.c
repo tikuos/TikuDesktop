@@ -52,7 +52,7 @@ static void fw_draw_rows(tiku_window_t *window, tiku_surface_t *surface,
 /* End of the forward declarations. */
 
 #define COUNT_HEIGHT 16     /* the count line along the bottom */
-#define TITLE_HEIGHT 20     /* the column title strip, in list mode */
+#define TITLE_HEIGHT TIKU_TRK_TITLE_HEIGHT
 /* The list's mini icon follows the row height, which follows the face: at
  * the 12 px face the row is 20 and the icon 16 (IV-013). */
 #define MINI_ICON_FOR(row_h) ((row_h) - 4)
@@ -68,7 +68,8 @@ static uint32_t
 folder_background(const tiku_trk_poseview_t *v)
 {
     return (v != NULL && tiku_trk_poseview_is_query(v))
-               ? tiku_tint(TIKU_C_DOC, 1.06f)
+               ? tiku_tint(TIKU_C_DOC,
+                   (TIKU_C_DOC & 255) < 128 ? 0.92f : 1.06f)
                : TIKU_C_DOC;
 }
 
@@ -415,6 +416,15 @@ pose_signature(tiku_trk_folder_window_t *folder, tiku_trk_pose_t *pose)
 
     (void)tiku_trk_nodeicon_resolve(render->icons, render->store,
                                     &pose->model, art, sizeof art);
+    if (render->services != NULL && render->services->art_for != NULL) {
+        const char *provided = render->services->art_for(
+            render->services->ctx, pose->model.path);
+        if (provided != NULL) snprintf(art, sizeof art, "%s", provided);
+    }
+    int held = render->press && render->press->down &&
+               render->press->folder == folder && render->press->row >= 0 &&
+               tiku_trk_poseview_at(folder->view, render->press->row) == pose;
+    h = sig_bytes(h, &held, sizeof held);
     h = sig_text(h, art);
     h = sig_text(h, pose->model.name);
     h = sig_bytes(h, &pose->loc_x, sizeof pose->loc_x);
@@ -1105,6 +1115,12 @@ draw_count(tiku_trk_folder_window_t *folder, tiku_surface_t *surface,
             snprintf(folder->count_text, sizeof folder->count_text, "%s",
                      label);
         }
+        if (folder->live) {
+            size_t used = strlen(label);
+            snprintf(label + used, sizeof label - used, " — %s",
+                folder->run && !tiku_query_done(folder->run)
+                    ? "searching…" : "live");
+        }
         /* The shell reads one count line, and the one it means is the
          * front window's: draw order is z-order, so the last window to
          * write here is the one on top. */
@@ -1232,7 +1248,7 @@ tiku_trk_folder_window_fit_width(const tiku_trk_folder_window_t *folder)
             int needed;
 
             (void)tiku_attr_format(&pose->desc,
-                pose->value_valid ? pose->value : "", value, sizeof value);
+                pose->value_valid ? pose->value : NULL, value, sizeof value);
             needed = tiku_text_width(font, value) + VALUE_GAP + 8;
             if (needed > width) {
                 width = needed;

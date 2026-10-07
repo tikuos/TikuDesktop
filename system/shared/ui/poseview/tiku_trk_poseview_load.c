@@ -384,6 +384,9 @@ tiku_trk_poseview_load_begin(tiku_trk_poseview_t *v, int64_t now)
     }
     /* The generation moves first: anything still in flight from the last
      * load carries the old one from here on and is refused. */
+    free(v->model_dirs);
+    v->model_dirs = NULL;
+    v->model_dir_count = 0;
     v->load_gen++;
     v->count = 0;
     pv_extent_clear(v);
@@ -423,6 +426,7 @@ int
 tiku_trk_poseview_load_step(tiku_trk_poseview_t *v, int64_t now)
 {
     int published = 0;
+    int64_t started = tiku_trk_now();
 
     if (v == NULL || !v->loading) {
         return 0;
@@ -455,7 +459,8 @@ tiku_trk_poseview_load_step(tiku_trk_poseview_t *v, int64_t now)
         pv_note_inserted(v, m->node_id);
         published++;
         if (published >= TIKU_TRK_LOAD_CHUNK ||
-            (v->next_chunk != 0 && now > v->next_chunk)) {
+            (v->next_chunk != 0 &&
+             tiku_trk_now() - started >= TIKU_TRK_LOAD_CHUNK_US)) {
             break;
         }
         if (v->next_chunk == 0) {
@@ -600,6 +605,9 @@ fill_from(tiku_trk_poseview_t *v, const tiku_model_t *m, int n,
         return -1;
     }
     first_query = as_query && !v->is_query;
+    free(v->model_dirs);
+    v->model_dirs = NULL;
+    v->model_dir_count = 0;
     v->count = 0;
     v->pivot = -1;
     v->active = -1;
@@ -645,7 +653,26 @@ int
 tiku_trk_poseview_set_models(tiku_trk_poseview_t *v,
                              const tiku_model_t *m, int n)
 {
-    return fill_from(v, m, n, 0);
+    char (*dirs)[TIKU_PATH_MAX];
+    int count = 0, result;
+    if (v == NULL || n < 0 || (n && m == NULL)) return -1;
+    if (n > POSES_MAX) n = POSES_MAX;
+    dirs = n ? calloc((size_t)n, sizeof *dirs) : NULL;
+    if (n && dirs == NULL) return -1;
+    for (int i = 0; i < n; i++) {
+        char parent[TIKU_PATH_MAX];
+        snprintf(parent, sizeof parent, "%s", m[i].path);
+        char *slash = strrchr(parent, '/');
+        if (slash == NULL) continue;
+        slash[slash == parent ? 1 : 0] = '\0';
+        int j;
+        for (j = 0; j < count && strcmp(dirs[j], parent); j++) {}
+        if (j == count) snprintf(dirs[count++], sizeof *dirs, "%s", parent);
+    }
+    result = fill_from(v, m, n, 0);
+    v->model_dirs = dirs;
+    v->model_dir_count = count;
+    return result;
 }
 
 int
@@ -782,6 +809,7 @@ tiku_trk_poseview_free(tiku_trk_poseview_t *v)
         free(v->band_was);
         free(v->stage);
         free(v->inserted);
+        free(v->model_dirs);
         free(v);
     }
 }
@@ -855,4 +883,3 @@ tiku_trk_poseview_load_landed(tiku_trk_poseview_t *v, int gen,
     v->next_chunk = 0;
     return 0;
 }
-

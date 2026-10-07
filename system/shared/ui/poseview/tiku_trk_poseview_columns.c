@@ -101,7 +101,8 @@ tiku_trk_poseview_save_columns(tiku_trk_poseview_t *v)
         const char *at = (v->query_layout[0] == '\0' &&
                           strcmp(v->path, "/") == 0)
                              ? TIKU_ATTR_DISKS_COLUMNS
-                             : TIKU_ATTR_COLUMNS;
+                             : (v->state_key[0] && !v->query_layout[0])
+                                 ? TIKU_ATTR_DESK_COLUMNS : TIKU_ATTR_COLUMNS;
         const char *nd = (v->query_layout[0] != '\0')
                              ? v->query_layout
                              : pv_state_node(v, node, sizeof node);
@@ -163,7 +164,8 @@ tiku_trk_poseview_restore_columns(tiku_trk_poseview_t *v)
         const char *at = (v->query_layout[0] == '\0' &&
                           strcmp(v->path, "/") == 0)
                              ? TIKU_ATTR_DISKS_COLUMNS
-                             : TIKU_ATTR_COLUMNS;
+                             : (v->state_key[0] && !v->query_layout[0])
+                                 ? TIKU_ATTR_DESK_COLUMNS : TIKU_ATTR_COLUMNS;
         const char *nd = (v->query_layout[0] != '\0')
                              ? v->query_layout
                              : pv_state_node(v, node, sizeof node);
@@ -457,8 +459,12 @@ tiku_trk_poseview_column_after(tiku_trk_poseview_t *v, int field, int after)
     if (at < 0) {
         return 0;
     }
-    /* The index just past the target's. */
-    return tiku_trk_poseview_move_column_to(v, field, at + 1);
+    int from = column_index(v, field);
+
+    if (from < 0 || from == at) {
+        return 0;
+    }
+    return tiku_trk_poseview_move_column_to(v, field, at + (from > at));
 }
 
 int
