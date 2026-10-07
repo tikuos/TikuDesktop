@@ -60,6 +60,15 @@ tiku_tx_t *tiku_tx_open_custom(int fd, tiku_tx_write_fn write,
                                tiku_tx_pump_fn pump, void *ctx,
                                const char *name);
 
+/** @brief A custom transport's release: it is closing, and what @p ctx
+ *         holds for it may go. */
+typedef void (*tiku_tx_release_fn)(void *ctx);
+
+/** @brief Run @p release with a custom transport's ctx as it closes, so
+ *         what it reads from outlives every read; no effect on another
+ *         kind. */
+void tiku_tx_on_close(tiku_tx_t *tx, tiku_tx_release_fn release);
+
 /**
  * @brief Read whatever has arrived, waiting at most @p timeout_ms.
  *

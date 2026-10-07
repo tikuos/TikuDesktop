@@ -223,6 +223,8 @@ ifeq ($(UNAME_S),Linux)
 test_shm_LDLIBS += -Wl,--wrap=posix_fallocate
 endif
 test_channel_LDLIBS := -lutil -lpthread
+# A thread stands in for the desktop's worker, reading the shell road.
+test_link_tcp_LDLIBS := -lpthread
 test_trail_CFLAGS := -I$(K)/support
 test_report_CFLAGS := -I$(K)/support
 test_watchdog_CFLAGS := -I$(K)/support

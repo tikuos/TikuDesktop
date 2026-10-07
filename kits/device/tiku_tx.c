@@ -47,6 +47,7 @@ struct tiku_tx {
     char name[288];
     tiku_tx_write_fn cwrite;   /* custom only */
     tiku_tx_pump_fn  cpump;
+    tiku_tx_release_fn crelease;
     void            *cctx;
 };
 
@@ -220,6 +221,14 @@ tiku_tx_open_custom(int fd, tiku_tx_write_fn write, tiku_tx_pump_fn pump,
     return tx;
 }
 
+void
+tiku_tx_on_close(tiku_tx_t *tx, tiku_tx_release_fn release)
+{
+    if (tx != NULL && tx->kind == TX_CUSTOM) {
+        tx->crelease = release;
+    }
+}
+
 int
 tiku_tx_read(tiku_tx_t *tx, void *buf, size_t max, int timeout_ms)
 {
@@ -339,6 +348,9 @@ tiku_tx_close(tiku_tx_t *tx)
     }
     if (tx->fd >= 0 && tx->kind != TX_CUSTOM) {
         (void)close(tx->fd);
+    }
+    if (tx->kind == TX_CUSTOM && tx->crelease != NULL) {
+        tx->crelease(tx->cctx);
     }
     free(tx);
 }

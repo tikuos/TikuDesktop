@@ -77,9 +77,11 @@ tiku_link_t *tiku_channel_link(const tiku_channel_t *ch);
  * @brief The board's shell over the same link: a transport whose bytes
  *        out go as SHELL_IN messages and whose bytes back are what the
  *        board's shell wrote, so a session and a namespace can run on a
- *        board reached only over the link.  One per channel; the transport
- *        is the caller's to close, and reads nothing once the channel is
- *        closed.  NULL when out of sockets.
+ *        board reached only over the link.  One per channel, opened on the
+ *        thread that pumps it: a read there services the link, one on a
+ *        worker waits for that thread's pump.  The transport is the
+ *        caller's to close, and reads an end once the channel is closed.
+ *        NULL when out of sockets.
  */
 tiku_tx_t *tiku_channel_shell_tx(tiku_channel_t *ch);
 

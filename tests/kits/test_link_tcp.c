@@ -9,7 +9,8 @@
  * lengths and bytes, split and joined every way a stream may split them,
  * and the link delivers each message once and whole; one larger than any
  * board sends is passed over and the next still arrives.  A channel then
- * carries the desktop's greeting out over the same socket.
+ * carries the desktop's greeting out over the same socket, and its shell
+ * road is read and written from a worker while this thread pumps.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,6 +23,7 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <poll.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
@@ -422,6 +424,129 @@ the_unread_stream(void)
     close(sv[1]);
 }
 
+/* One read of the shell road on a worker, timed. */
+typedef struct {
+    tiku_tx_t    *tx;
+    int           timeout_ms;
+    int           got;
+    long          took_ms;
+    int           done;
+    unsigned char buf[64];
+} road_read_t;
+
+/** @brief Milliseconds on the monotonic clock. */
+static long
+ms_now(void)
+{
+    struct timespec ts;
+
+    (void)clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long)ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
+}
+
+/** @brief On a worker: the read, and how long it took. */
+static void *
+road_read(void *ctx)
+{
+    road_read_t *r = ctx;
+    long t0 = ms_now();
+
+    r->got = tiku_tx_read(r->tx, r->buf, sizeof r->buf, r->timeout_ms);
+    r->took_ms = ms_now() - t0;
+    __atomic_store_n(&r->done, 1, __ATOMIC_RELEASE);
+    return NULL;
+}
+
+/** @brief On a worker: a command for the board's shell. */
+static void *
+road_write(void *ctx)
+{
+    road_read_t *r = ctx;
+
+    r->got = tiku_tx_write(r->tx, "ls\r", 3u);
+    __atomic_store_n(&r->done, 1, __ATOMIC_RELEASE);
+    return NULL;
+}
+
+/** @brief Pump @p ch on this thread until the worker in @p r is done, or
+ *         @p ms pass. */
+static void
+pump_until_done(tiku_channel_t *ch, road_read_t *r, int ms)
+{
+    struct timespec nap = { 0, 5 * 1000 * 1000 };
+    long until = ms_now() + ms;
+
+    while (!__atomic_load_n(&r->done, __ATOMIC_ACQUIRE) && ms_now() < until) {
+        (void)tiku_channel_pump(ch);
+        nanosleep(&nap, NULL);
+    }
+}
+
+/**
+ * @brief The shell road used from a worker while this thread pumps, as
+ *        the desktop asks a board what changed: the worker only waits on
+ *        the road, and a read still waiting when the channel closes hears
+ *        an end at once rather than reaching into the closed channel.
+ */
+static void
+the_shell_from_a_worker(void)
+{
+    static const unsigned char said[8 + 2] = { 22, 0, 0, 0, 2, 0, 0, 0,
+                                               'o', 'k' };
+    unsigned char got[64];
+    tiku_channel_t *ch;
+    road_read_t r;
+    pthread_t th;
+    int sv[2];
+    size_t n;
+
+    printf("the shell road from a worker\n");
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+        check(0, "a socket pair for the channel");
+        return;
+    }
+    memset(&r, 0, sizeof r);
+    ch = tiku_channel_adopt(tiku_link_tcp_open(sv[0]));
+    r.tx = (ch != NULL) ? tiku_channel_shell_tx(ch) : NULL;
+    check(r.tx != NULL, "a channel with its shell road open");
+    if (r.tx == NULL || pthread_create(&th, NULL, road_write, &r) != 0) {
+        return;
+    }
+    pump_until_done(ch, &r, 2000);
+    (void)pthread_join(th, NULL);
+    (void)tiku_channel_pump(ch);
+    n = take(sv[1], got, sizeof got, 1000);
+    check(r.got == 3 && n == TIKU_LINK_TCP_HEADER + 8u + 3u &&
+              got[TIKU_LINK_TCP_HEADER] == 21u &&
+              memcmp(got + TIKU_LINK_TCP_HEADER + 8u, "ls\r", 3u) == 0,
+          "a worker's command leaves as SHELL_IN on the pumping thread");
+
+    memset(r.buf, 0, sizeof r.buf);
+    r.done = 0;
+    r.timeout_ms = 3000;
+    if (pthread_create(&th, NULL, road_read, &r) != 0) {
+        return;
+    }
+    put_msg(sv[1], said, sizeof said);
+    pump_until_done(ch, &r, 2000);
+    (void)pthread_join(th, NULL);
+    check(r.got == 2 && memcmp(r.buf, "ok", 2u) == 0,
+          "and the board's answer reaches the worker's read");
+
+    r.done = 0;
+    r.timeout_ms = 5000;
+    if (pthread_create(&th, NULL, road_read, &r) != 0) {
+        return;
+    }
+    pump_until_done(ch, &r, 100);
+    tiku_channel_close(ch);
+    (void)pthread_join(th, NULL);
+    check(r.got == -1 && r.took_ms < 2000,
+          "a read waiting as the channel closes hears an end at once");
+    tiku_tx_close(r.tx);
+    close(sv[1]);
+}
+
 /** @brief The link over a socket, then a channel on one. */
 int
 main(void)
@@ -446,6 +571,7 @@ main(void)
     the_channel(47750);
     the_unread_shell();
     the_unread_stream();
+    the_shell_from_a_worker();
     printf("%s\n", fails ? "FAILURES" : "a length in front is enough");
     return fails ? 1 : 0;
 }

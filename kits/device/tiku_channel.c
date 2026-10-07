@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -58,6 +59,21 @@
 #define STALL_MS          2000
 #define STALL_STEP_MS     50
 
+/*
+ * The board's shell as a socket pair: the session at one end, the channel
+ * at the other.  Only the thread that opened it, the one pumping the
+ * channel, touches the link; a reader on another thread waits on its
+ * socket.  The channel and the transport each hold it and the last to let
+ * go closes it, so a read in flight as the channel closes hears an end.
+ */
+struct shell_road {
+    tiku_channel_t *ch;             /* NULL once the channel is closed */
+    pthread_t       owner;          /* the thread that pumps the channel */
+    int             desk_fd;        /* the session's end */
+    int             mine_fd;        /* the channel's end */
+    int             refs;           /* the channel's and the transport's */
+};
+
 struct tiku_channel {
     tiku_link_t    *link;           /* the board, over its medium */
     tiku_session_t *sess;           /* a port of its own, or NULL */
@@ -75,8 +91,7 @@ struct tiku_channel {
     int             regreets;       /* greetings said again since last_rx */
     int             losses;         /* the link's and stalls, in all */
     int             stalled;        /* the listener's stream is shut */
-    int             shell_desk_fd;  /* the shell road's ends, or -1 */
-    int             shell_mine_fd;
+    struct shell_road *road;        /* the board's shell, or NULL */
 };
 
 /** @brief Milliseconds on the monotonic clock. */
@@ -173,8 +188,8 @@ on_message(const unsigned char *bytes, size_t len, void *ctx)
     ch->regreets = 0;
         if (len >= MSG_HEAD && bytes[0] == RMSG_SHELL_OUT && bytes[1] == 0u &&
         bytes[2] == 0u && bytes[3] == 0u && MSG_HEAD + len_at(bytes) <= len) {
-        if (ch->shell_mine_fd >= 0) {
-            write_fit(ch->shell_mine_fd, bytes + MSG_HEAD, len_at(bytes));
+        if (ch->road != NULL) {
+            write_fit(ch->road->mine_fd, bytes + MSG_HEAD, len_at(bytes));
         }
         return;
     }
@@ -212,57 +227,100 @@ tiku_channel_adopt(tiku_link_t *link)
     ch->link = link;
     ch->desk_fd = sv[0];
     ch->mine_fd = sv[1];
-    ch->shell_desk_fd = -1;
-    ch->shell_mine_fd = -1;
     (void)fcntl(ch->mine_fd, F_SETFL, O_NONBLOCK);
     tiku_link_on_message(link, on_message, ch);
     return ch;
 }
 
-/** @brief Bytes for the board's shell, as SHELL_IN messages the link
- *         takes one at a time; the link is serviced while it will not.
- *  @return @p len, or -1 when the link refuses a message or stays busy
- *          for SHELL_WAIT_MS. */
-static int
-shell_write(const void *buf, size_t len, void *ctx)
+/** @brief Pass what the session wrote on the shell road to the board, as
+ *         SHELL_IN messages, while the link takes them. */
+static void
+shell_forward(tiku_channel_t *ch)
 {
-    tiku_channel_t *ch = ctx;
-    const unsigned char *p = buf;
-    size_t off = 0;
+    unsigned char msg[MSG_HEAD + SHELL_CHUNK];
 
-    while (off < len) {
-        unsigned char msg[MSG_HEAD + SHELL_CHUNK];
-        size_t n = len - off;
-        long deadline = now_ms() + SHELL_WAIT_MS;
+    while (ch->road != NULL && tiku_link_ready(ch->link)) {
+        ssize_t n = read(ch->road->mine_fd, msg + MSG_HEAD, SHELL_CHUNK);
 
-        if (n > SHELL_CHUNK) {
-            n = SHELL_CHUNK;
-        }
-        while (!tiku_link_ready(ch->link)) {
-            if (now_ms() >= deadline) {
-                return -1;
-            }
-            tiku_link_pump(ch->link);
+        if (n <= 0) {
+            return;
         }
         memset(msg, 0, MSG_HEAD);
         msg[0] = RMSG_SHELL_IN;
         msg[4] = (unsigned char)n;
-        memcpy(msg + MSG_HEAD, p + off, n);
-        if (tiku_link_send(ch->link, msg, MSG_HEAD + n) != 0) {
+        (void)tiku_link_send(ch->link, msg, MSG_HEAD + (size_t)n);
+    }
+}
+
+/** @brief Service the link while a read of the board's shell waits, when
+ *         the reader is the thread that pumps the channel; a reader on any
+ *         other thread waits for that thread's next turn. */
+static void
+shell_pump(void *ctx)
+{
+    struct shell_road *road = ctx;
+
+    if (pthread_equal(pthread_self(), road->owner) && road->ch != NULL) {
+        tiku_link_pump(road->ch->link);
+        shell_forward(road->ch);
+    }
+}
+
+/** @brief Bytes for the board's shell, into the road for the channel's
+ *         pump to pass on.  @return @p len, or -1 when the channel is
+ *         closed or the road stays full for SHELL_WAIT_MS. */
+static int
+shell_write(const void *buf, size_t len, void *ctx)
+{
+    struct shell_road *road = ctx;
+    const unsigned char *p = buf;
+    long deadline = now_ms() + SHELL_WAIT_MS;
+    size_t off = 0;
+
+    while (off < len) {
+        ssize_t n = send(road->desk_fd, p + off, len - off, MSG_NOSIGNAL);
+
+        if (n > 0) {
+            off += (size_t)n;
+        } else if (n < 0 && errno == EINTR) {
+            continue;
+        } else if (n < 0 && errno == EAGAIN && now_ms() < deadline) {
+            struct pollfd one = { road->desk_fd, POLLOUT, 0 };
+
+            shell_pump(road);
+            (void)poll(&one, 1u, STALL_STEP_MS);
+        } else {
             return -1;
         }
-        off += n;
     }
     return (int)len;
 }
 
-/** @brief Service the link while a read of the board's shell waits. */
+/** @brief Let go of the road; the last holder closes and frees it. */
 static void
-shell_pump(void *ctx)
+road_release(void *ctx)
 {
-    tiku_channel_t *ch = ctx;
+    struct shell_road *road = ctx;
 
-    tiku_link_pump(ch->link);
+    if (__atomic_sub_fetch(&road->refs, 1, __ATOMIC_ACQ_REL) == 0) {
+        close(road->desk_fd);
+        close(road->mine_fd);
+        free(road);
+    }
+}
+
+/** @brief A write to @p fd once its peer is gone fails rather than raising
+ *         SIGPIPE; Darwin's sockets take that per socket. */
+static void
+no_sigpipe(int fd)
+{
+#ifdef SO_NOSIGPIPE
+    int on = 1;
+
+    (void)setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
+#else
+    (void)fd;
+#endif
 }
 
 int
@@ -321,20 +379,41 @@ tiku_channel_basic_recv(tiku_channel_t *ch, void *buf, size_t max)
 tiku_tx_t *
 tiku_channel_shell_tx(tiku_channel_t *ch)
 {
+    struct shell_road *road;
+    tiku_tx_t *tx;
     int sv[2];
 
-    if (ch == NULL || ch->shell_desk_fd >= 0) {
+    if (ch == NULL || ch->road != NULL) {
+        return NULL;
+    }
+    road = calloc(1, sizeof *road);
+    if (road == NULL) {
         return NULL;
     }
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+        free(road);
         return NULL;
     }
-    ch->shell_desk_fd = sv[0];
-    ch->shell_mine_fd = sv[1];
-    (void)fcntl(ch->shell_desk_fd, F_SETFL, O_NONBLOCK);
-    (void)fcntl(ch->shell_mine_fd, F_SETFL, O_NONBLOCK);
-    return tiku_tx_open_custom(ch->shell_desk_fd, shell_write, shell_pump,
-                               ch, "shell over a link");
+    road->ch = ch;
+    road->owner = pthread_self();
+    road->desk_fd = sv[0];
+    road->mine_fd = sv[1];
+    road->refs = 2;
+    (void)fcntl(road->desk_fd, F_SETFL, O_NONBLOCK);
+    (void)fcntl(road->mine_fd, F_SETFL, O_NONBLOCK);
+    no_sigpipe(road->desk_fd);
+    no_sigpipe(road->mine_fd);
+    tx = tiku_tx_open_custom(road->desk_fd, shell_write, shell_pump, road,
+                             "shell over a link");
+    if (tx == NULL) {
+        close(sv[0]);
+        close(sv[1]);
+        free(road);
+        return NULL;
+    }
+    tiku_tx_on_close(tx, road_release);
+    ch->road = road;
+    return tx;
 }
 
 int
@@ -541,6 +620,7 @@ tiku_channel_pump(tiku_channel_t *ch)
         return 0;
     }
     tend(ch);
+    shell_forward(ch);
     for (;;) {
         ssize_t n;
         size_t len;
@@ -607,9 +687,11 @@ tiku_channel_close(tiku_channel_t *ch)
     tiku_session_free(ch->sess);
     close(ch->desk_fd);
     close(ch->mine_fd);
-    if (ch->shell_desk_fd >= 0) {
-        close(ch->shell_desk_fd);
-        close(ch->shell_mine_fd);
+    if (ch->road != NULL) {
+        /* A read still waiting on the road hears its end now. */
+        ch->road->ch = NULL;
+        (void)shutdown(ch->road->mine_fd, SHUT_RDWR);
+        road_release(ch->road);
     }
     free(ch);
 }
