@@ -333,19 +333,41 @@ ps_run(const pdf_func_t *f, int from, int to, double *st, int *sp, int depth)
     return 0;
 }
 
-pdf_func_t *
-pdf_func_load(tiku_pdf_t *doc, pdf_obj_t *spec)
+/** @brief Load a function or component array with bounded recursion. */
+static pdf_func_t *
+func_load(tiku_pdf_t *doc, pdf_obj_t *spec, int depth)
 {
     pdf_func_t *f;
     int i;
 
     spec = pdf_resolve(doc, spec);
-    if (spec == NULL || (spec->kind != PDF_DICT && spec->kind != PDF_STREAM)) {
+    if (depth > FUNC_DEPTH || spec == NULL ||
+        (spec->kind != PDF_DICT && spec->kind != PDF_STREAM &&
+         spec->kind != PDF_ARRAY)) {
         return NULL;
     }
     f = calloc(1, sizeof *f);
     if (f == NULL) {
         return NULL;
+    }
+    if (spec->kind == PDF_ARRAY) {
+        if (spec->u.a.n < 1 || spec->u.a.n > PDF_FUNC_MAX_OUT) {
+            pdf_func_free(f);
+            return NULL;
+        }
+        f->type = -2;
+        for (i = 0; i < spec->u.a.n; i++) {
+            f->part[i] = func_load(doc, spec->u.a.item[i], depth + 1);
+            f->nparts++;
+            if (f->part[i] == NULL || f->part[i]->nout != 1 ||
+                (i && f->part[i]->nin != f->nin)) {
+                pdf_func_free(f);
+                return NULL;
+            }
+            f->nin = f->part[i]->nin;
+        }
+        f->nout = f->nparts;
+        return f;
     }
     f->type = pdf_int(pdf_get(doc, spec, "FunctionType"), -1);
     f->nin = numbers(doc, pdf_get(doc, spec, "Domain"), f->domain,
@@ -373,7 +395,8 @@ pdf_func_load(tiku_pdf_t *doc, pdf_obj_t *spec)
 
         if (parts != NULL && parts->kind == PDF_ARRAY) {
             for (i = 0; i < parts->u.a.n && f->nparts < 16; i++) {
-                f->part[f->nparts] = pdf_func_load(doc, parts->u.a.item[i]);
+                f->part[f->nparts] = func_load(doc, parts->u.a.item[i],
+                                               depth + 1);
                 if (f->part[f->nparts] != NULL) {
                     f->nparts++;
                 }
@@ -465,6 +488,12 @@ pdf_func_load(tiku_pdf_t *doc, pdf_obj_t *spec)
         f->nout = PDF_FUNC_MAX_OUT;
     }
     return f;
+}
+
+pdf_func_t *
+pdf_func_load(tiku_pdf_t *doc, pdf_obj_t *spec)
+{
+    return func_load(doc, spec, 0);
 }
 
 void
@@ -577,10 +606,18 @@ eval(const pdf_func_t *f, const double *in, int nin, double *out, int depth)
 {
     int n = 0, j;
 
-    if (f == NULL || depth > FUNC_DEPTH) {
+    if (f == NULL || depth > FUNC_DEPTH || in == NULL || out == NULL ||
+        nin < f->nin) {
         return 0;
     }
-    if (f->type == 2) {
+    if (f->type == -2) {
+        for (j = 0; j < f->nparts; j++) {
+            if (eval(f->part[j], in, nin, out + j, depth + 1) != 1) {
+                return 0;
+            }
+        }
+        n = f->nparts;
+    } else if (f->type == 2) {
         double x = in[0] < f->domain[0] ? f->domain[0]
                    : in[0] > f->domain[1] ? f->domain[1] : in[0];
         double t = f->expo == 1 ? x : pow(x, f->expo);

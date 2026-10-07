@@ -242,6 +242,11 @@ expression(parser_t *p, unsigned depth)
                     c = '\t';
                 } else if (c == 'r') {
                     c = '\n';
+                    if (p->bytes - p->at >= 2 &&
+                        p->data[p->at] == '\\' && p->data[p->at + 1] == 'n') {
+                        take(p);
+                        take(p);
+                    }
                 } else if (c != '\\' && c != '"') {
                     return fail(p, TIKU_CIRCUIT_BAD,
                                 "Unknown string escape");

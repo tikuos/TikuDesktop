@@ -282,6 +282,28 @@ tiku_icon_paint_selected(tiku_surface_t *s, const char *name, int x,
     return done;
 }
 
+/** @brief Blend a scaled thumbnail's straight-alpha samples over the surface. */
+static void
+thumb_blend(tiku_surface_t *s, const tiku_image_t *th, int x, int y, int size)
+{
+    tiku_gfx_rec_miss(s);
+    for (int py = 0; py < size; py++) {
+        long sy = (long)py * th->h / size;
+        for (int px = 0; px < size; px++) {
+            long sx = (long)px * th->w / size;
+            uint32_t p = th->px[sy * th->w + sx];
+            unsigned a = p >> 24;
+            if (a) {
+                unsigned r = (((p >> 16) & 255u) * a + 127u) / 255u;
+                unsigned g = (((p >> 8) & 255u) * a + 127u) / 255u;
+                unsigned b = ((p & 255u) * a + 127u) / 255u;
+                p = (a << 24) | (r << 16) | (g << 8) | b;
+                tiku_pixel(s, x + px, y + py, over(p, tiku_peek(s, x + px, y + py)));
+            }
+        }
+    }
+}
+
 void
 tiku_thumb_paint(tiku_surface_t *s, const tiku_image_t *th,
                      int x, int y, int size)
@@ -289,28 +311,12 @@ tiku_thumb_paint(tiku_surface_t *s, const tiku_image_t *th,
     uint32_t scaled[TIKU_DL_PICTURE_MAX];
     int py, px;
 
-    if (s == NULL || th == NULL || th->px == NULL || size <= 0) {
+    if (s == NULL || th == NULL || th->px == NULL || size <= 0 ||
+        th->w <= 0 || th->h <= 0) {
         return;
     }
     if ((long)size * (long)size > TIKU_DL_PICTURE_MAX) {
-        /* Too big for one display-list picture and for the scaling
-         * buffer: drawn pixel by pixel, and tiku_pixel marks a recording
-         * list as missing a draw. */
-        for (py = 0; py < size; py++) {
-            long sy = (long)py * th->h / size;
-
-            for (px = 0; px < size; px++) {
-                long sx = (long)px * th->w / size;
-                uint32_t p = th->px[sy * th->w + sx];
-
-                if ((p >> 24) != 0u) {
-                    tiku_pixel(s, x + px, y + py,
-                                    TIKU_RGB((p >> 16) & 0xffu,
-                                                  (p >> 8) & 0xffu,
-                                                  p & 0xffu));
-                }
-            }
-        }
+        thumb_blend(s, th, x, y, size);
         return;
     }
     /*
@@ -325,6 +331,11 @@ tiku_thumb_paint(tiku_surface_t *s, const tiku_image_t *th,
             long sx = (long)px * th->w / size;
 
             scaled[py * size + px] = th->px[sy * th->w + sx];
+            unsigned a = scaled[py * size + px] >> 24;
+            if (a && a != 255) {
+                thumb_blend(s, th, x, y, size);
+                return;
+            }
         }
     }
     tiku_picture(s, x, y, size, size, scaled);

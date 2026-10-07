@@ -1148,7 +1148,9 @@ pdf_text_string(const pdf_obj_t *s)
         for (i = 0; i < len; i++) {
             unsigned cp = p[i];
 
-            if (cp >= 0x80 && cp < 0xa0) {
+            if (cp >= 0x18 && cp <= 0x1f) {
+                cp = pdfdoc_marks[cp - 0x18];
+            } else if (cp >= 0x80 && cp < 0xa0) {
                 cp = pdfdoc_high[cp - 0x80];
             } else if (cp == 0xa0) {
                 cp = 0x20ac;                /* the euro */

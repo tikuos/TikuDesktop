@@ -7,7 +7,7 @@
  * tiku_thumb.h - thumbnails: when to make one, where it lives, and the
  * two queues that make them one job at a time.
  *
- * A stored thumbnail is trusted only while it is newer than the file.
+ * A stored thumbnail is trusted only while its source file is unchanged.
  * Big files wait on a queue of their own, taken only when the small one
  * is empty, and the same file is not worked twice at once.
  *
@@ -53,6 +53,15 @@ typedef struct {
                                      * queue                            */
 } tiku_thumb_job_t;
 
+/**
+ * @brief A file's identity, size and modification time to the nanosecond,
+ *        read before decoding and stored as the thumbnail's stamp.
+ */
+typedef struct {
+    uint64_t device, inode, bytes;
+    int64_t mtime, mtime_ns;
+} tiku_thumb_stamp_t;
+
 /** @brief The two queues and what is in flight. */
 typedef struct {
     tiku_thumb_job_t small[TIKU_THUMB_QUEUE];
@@ -60,6 +69,8 @@ typedef struct {
     tiku_thumb_job_t big[TIKU_THUMB_QUEUE];
     int                  nbig;
     char                 active[TIKU_PATH_MAX];  /* "" when idle    */
+    tiku_thumb_stamp_t    source;
+    int                  source_valid;
     int                  made;      /* thumbnails produced this session */
     int                  enabled;   /* the "Generate image thumbnails"
                                      * setting; on by default           */
@@ -75,8 +86,10 @@ int tiku_thumb_wanted(const tiku_thumb_q_t *q, const char *path);
 /**
  * @brief Whether the stored thumbnail may still be trusted.
  *
- * Its stamp must be strictly newer than @p mtime: a thumbnail made in the
- * same second as an edit may not show the edit.
+ * The stamp tiku_thumb_landed() recorded holds the modification time of
+ * the file as it was decoded; the thumbnail is fresh while that time is
+ * not before @p mtime, the file's modification time as the caller's model
+ * has it.  Reads the stamp only, not the file.
  */
 int tiku_thumb_fresh(tiku_store_t *store, const char *path,
                          int64_t mtime);
@@ -118,10 +131,13 @@ int  tiku_thumb_take(tiku_thumb_q_t *q, char *path, size_t max);
 int  tiku_thumb_make(const char *path, int *w, int *h, tiku_image_t *thumb);
 /**
  * @brief Finish the active job: store @p thumb's pixels in the cache and
- *        its stamp and the image's size as attributes, count it, free it,
- *        and clear the active job.
+ *        the stamp tiku_thumb_take() read and the image's size as
+ *        attributes, count it, free it, and clear the active job.
  *
- * A NULL or empty @p thumb, a failed make, only clears the active job.
+ * Nothing is stored when the file's identity, size or modification time
+ * differs from what tiku_thumb_take() read, or when the cache write
+ * fails.  A NULL or empty @p thumb, a failed make, only clears the
+ * active job.
  *
  * @note Call on the thread that owns @p q and @p store.
  */

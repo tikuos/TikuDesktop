@@ -124,8 +124,8 @@ le32(const unsigned char *p)
 
 /**
  * @brief Decode the @p n BMP bytes at @p b into @p out: uncompressed rows
- *        of 24 or 32 bits, the fourth byte read as alpha, at most 20000
- *        pixels a side and TIKU_IMAGE_PIXELS_MAX in all.
+ *        of 24 or 32 bits, opaque with the reserved fourth byte ignored.
+ *        At most 20000 pixels a side and TIKU_IMAGE_PIXELS_MAX in all.
  * @return TIKU_IMG_OK; UNSUPPORTED for another depth, a compression or a
  *         header shorter than BITMAPINFOHEADER; BAD for a malformed file
  *         or a failed allocation.
@@ -179,7 +179,7 @@ load_bmp(const unsigned char *b, long n, tiku_image_t *out)
 
         for (x = 0; x < w; x++) {
             const unsigned char *p = row + (long)x * (long)(bpp / 8u);
-            uint32_t a = (bpp == 32u) ? p[3] : 0xffu;
+            uint32_t a = 0xffu;
 
             out->px[(long)y * w + x] = (a << 24) | ((uint32_t)p[2] << 16) |
                                        ((uint32_t)p[1] << 8) | p[0];
@@ -366,28 +366,35 @@ static uint32_t png_crc(const unsigned char *bytes, size_t len)
     return ~crc;
 }
 
+/** @brief Parsed PNG chunks and their compressed pixel data. */
+typedef struct {
+    unsigned char *idat;
+    uint32_t pal[256];
+    long ilen;
+    int w, h, interlace, npal, ended;
+    png_fmt_t f;
+} png_source_t;
+
 /**
- * @brief Decode the @p n PNG bytes at @p b into @p out: every chunk's CRC
- *        checked, the palette's alpha from tRNS, at most 30000 pixels a
- *        side and TIKU_IMAGE_PIXELS_MAX in all.
- * @return TIKU_IMG_OK; NOT_IMAGE without the signature; UNSUPPORTED for a
- *         depth other than 1, 2, 4 or 8, or other than 8 for truecolour
- *         and alpha; BAD for a malformed file or a failed allocation.
+ * @brief Read the chunks of the @p n PNG bytes at @p b into @p src: every
+ *        chunk's CRC checked, the palette's alpha from tRNS, at most 30000
+ *        pixels a side and TIKU_IMAGE_PIXELS_MAX in all.
+ * @return TIKU_IMG_OK with src->idat allocated; NOT_IMAGE without the
+ *         signature; UNSUPPORTED for a depth other than 1, 2, 4 or 8, or
+ *         other than 8 for truecolour and alpha; BAD for a malformed file
+ *         or a failed allocation.  Any code but OK leaves nothing
+ *         allocated.
  */
 static tiku_image_err_t
-load_png(const unsigned char *b, long n, tiku_image_t *out)
+png_source(const unsigned char *b, long n, png_source_t *src)
 {
-    static const unsigned char sig[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
-    unsigned char *idat = NULL, *raw = NULL;
-    uint32_t pal[256];
-    long ilen = 0, i = 8, rawlen, got;
-    int w = 0, h = 0, interlace = 0, npal = 0, p, ended = 0;
-    png_fmt_t f;
-    tiku_image_err_t rc = TIKU_IMG_BAD;
-
-    memset(&f, 0, sizeof f);
+    static const unsigned char sig[8] = {137, 80, 78, 71, 13, 10, 26, 10};
+    long i = 8;
+    int p;
+    memset(src, 0, sizeof *src);
+    memset(&src->f, 0, sizeof src->f);
     for (p = 0; p < 256; p++) {
-        pal[p] = 0xff000000u;
+        src->pal[p] = 0xff000000u;
     }
     if (n < 8 || memcmp(b, sig, 8) != 0) {
         return TIKU_IMG_NOT_IMAGE;
@@ -401,105 +408,129 @@ load_png(const unsigned char *b, long n, tiku_image_t *out)
         }
         if (png_crc(b + i + 4, (size_t)len + 4) !=
             be32(b + i + 8 + len)) {
-            free(idat); return TIKU_IMG_BAD;
+            free(src->idat); return TIKU_IMG_BAD;
         }
         if (memcmp(type, "IHDR", 4) == 0) {
             if (len != 13u || i != 8 || b[i + 18] || b[i + 19] ||
-                b[i + 20] > 1) { free(idat); return TIKU_IMG_BAD; }
-            w = (int)be32(b + i + 8);
-            h = (int)be32(b + i + 12);
-            f.depth = b[i + 16];
-            f.colour = b[i + 17];
-            interlace = b[i + 20];
+                b[i + 20] > 1) { free(src->idat); return TIKU_IMG_BAD; }
+            src->w = (int)be32(b + i + 8);
+            src->h = (int)be32(b + i + 12);
+            src->f.depth = b[i + 16];
+            src->f.colour = b[i + 17];
+            src->interlace = b[i + 20];
         } else if (memcmp(type, "PLTE", 4) == 0) {
             uint32_t k;
 
-            npal = (int)(len / 3u);
-            if (npal > 256) { npal = 256; }
-            for (k = 0; k < (uint32_t)npal; k++) {
-                pal[k] = 0xff000000u |
+            src->npal = (int)(len / 3u);
+            if (src->npal > 256) { src->npal = 256; }
+            for (k = 0; k < (uint32_t)src->npal; k++) {
+                src->pal[k] = 0xff000000u |
                          ((uint32_t)b[i + 8 + k * 3u] << 16) |
                          ((uint32_t)b[i + 9 + k * 3u] << 8) |
                          b[i + 10 + k * 3u];
             }
-        } else if (memcmp(type, "tRNS", 4) == 0 && f.colour == 3) {
+        } else if (memcmp(type, "tRNS", 4) == 0 && src->f.colour == 3) {
             uint32_t k;
 
             /* Per-entry alpha for the palette.  The other colour types'
              * tRNS is not read. */
             for (k = 0; k < len && k < 256u; k++) {
-                pal[k] = (pal[k] & 0x00ffffffu) |
+                src->pal[k] = (src->pal[k] & 0x00ffffffu) |
                          ((uint32_t)b[i + 8 + k] << 24);
             }
         } else if (memcmp(type, "IDAT", 4) == 0) {
-            unsigned char *grown = realloc(idat, (size_t)(ilen + len));
+            unsigned char *grown = realloc(src->idat,
+                                           (size_t)(src->ilen + len));
 
             if (grown == NULL) {
-                free(idat);
+                free(src->idat);
                 return TIKU_IMG_BAD;
             }
-            idat = grown;
-            memcpy(idat + ilen, b + i + 8, len);
-            ilen += (long)len;
+            src->idat = grown;
+            memcpy(src->idat + src->ilen, b + i + 8, len);
+            src->ilen += (long)len;
         } else if (memcmp(type, "IEND", 4) == 0) {
-            ended = len == 0;
+            src->ended = len == 0;
             break;
         }
         i += 12 + (long)len;
     }
-    if (!ended || w <= 0 || h <= 0 || idat == NULL ||
-        w > 30000 || h > 30000) {
-        free(idat);
+    if (!src->ended || src->w <= 0 || src->h <= 0 || src->idat == NULL ||
+        src->w > 30000 || src->h > 30000) {
+        free(src->idat);
         return TIKU_IMG_BAD;
     }
-    if ((size_t)w > TIKU_IMAGE_PIXELS_MAX / (size_t)h) {
-        free(idat);
+    if ((size_t)src->w > TIKU_IMAGE_PIXELS_MAX / (size_t)src->h) {
+        free(src->idat);
         return TIKU_IMG_BAD;
     }
-    switch (f.colour) {
-    case 0: f.chan = 1; break;
-    case 2: f.chan = 3; break;
-    case 3: f.chan = 1; break;
-    case 4: f.chan = 2; break;
-    case 6: f.chan = 4; break;
-    default: free(idat); return TIKU_IMG_BAD;
+    switch (src->f.colour) {
+    case 0: src->f.chan = 1; break;
+    case 2: src->f.chan = 3; break;
+    case 3: src->f.chan = 1; break;
+    case 4: src->f.chan = 2; break;
+    case 6: src->f.chan = 4; break;
+    default: free(src->idat); return TIKU_IMG_BAD;
     }
     /* Truecolour and alpha images are read at 8 bits a sample; PNG allows
      * the sub-byte depths to greyscale and palette images alone. */
-    if ((f.colour == 2 || f.colour == 4 || f.colour == 6) && f.depth != 8) {
-        free(idat);
+    if ((src->f.colour == 2 || src->f.colour == 4 || src->f.colour == 6) &&
+        src->f.depth != 8) {
+        free(src->idat);
         return TIKU_IMG_UNSUPPORTED;
     }
-    if (f.depth != 1 && f.depth != 2 && f.depth != 4 && f.depth != 8) {
-        free(idat);
+    if (src->f.depth != 1 && src->f.depth != 2 && src->f.depth != 4 &&
+        src->f.depth != 8) {
+        free(src->idat);
         return TIKU_IMG_UNSUPPORTED;   /* 16 bits, or an undefined depth */
     }
-    if (f.colour == 3 && npal == 0) {
-        free(idat);
+    if (src->f.colour == 3 && src->npal == 0) {
+        free(src->idat);
         return TIKU_IMG_BAD;
     }
-    f.pal = pal;
-    f.npal = npal;
-    f.bpp = (f.chan * f.depth + 7) / 8;
-    if (f.bpp < 1) { f.bpp = 1; }
+    src->f.pal = src->pal;
+    src->f.npal = src->npal;
+    src->f.bpp = (src->f.chan * src->f.depth + 7) / 8;
+    if (src->f.bpp < 1) { src->f.bpp = 1; }
 
+    return TIKU_IMG_OK;
+}
+
+/**
+ * @brief Decode the @p n PNG bytes at @p b into @p out: the chunks through
+ *        png_source(), the pixel data inflated and unfiltered, Adam7 pass
+ *        by pass.
+ * @return png_source()'s code, or BAD for a failed allocation or a
+ *         malformed stream; @p out is freed unless the result is OK.
+ */
+static tiku_image_err_t
+load_png(const unsigned char *b, long n, tiku_image_t *out)
+{
+    png_source_t src;
+    unsigned char *raw = NULL;
+    long rawlen, got;
+    int p;
+    tiku_image_err_t rc = png_source(b, n, &src);
+    if (rc != TIKU_IMG_OK) return rc;
+    rc = TIKU_IMG_BAD;
     /* An upper bound on the inflated rows: each row's bytes and filter
      * byte, doubled to cover Adam7's passes, whose rows round up apart. */
-    rawlen = ((long)w * f.chan * f.depth / 8L + f.chan + 1L) * h + h + 64L;
+    rawlen = ((long)src.w * src.f.chan * src.f.depth / 8L + src.f.chan + 1L)
+             * src.h + src.h + 64L;
     rawlen *= 2L;
     raw = malloc((size_t)rawlen);
-    out->px = calloc((size_t)w * (size_t)h, sizeof *out->px);
+    out->px = calloc((size_t)src.w * (size_t)src.h, sizeof *out->px);
     if (raw == NULL || out->px == NULL) {
         goto done;
     }
-    out->w = w;
-    out->h = h;
-    got = tiku_inflate_zlib(idat, ilen, raw, rawlen);
+    out->w = src.w;
+    out->h = src.h;
+    got = tiku_inflate_zlib(src.idat, src.ilen, raw, rawlen);
     if (got < 0) {
         goto done;
     }
-    if (!interlace) {
-        if (png_pass(raw, got, w, h, &f, out, 0, 0, 1, 1) < 0) {
+    if (!src.interlace) {
+        if (png_pass(raw, got, src.w, src.h, &src.f, out, 0, 0, 1, 1) < 0) {
             goto done;
         }
     } else {
@@ -510,9 +541,9 @@ load_png(const unsigned char *b, long n, tiku_image_t *out)
         for (p = 0; p < 7; p++) {
             int x0 = adam7[p][0], y0 = adam7[p][1];
             int dx = adam7[p][2], dy = adam7[p][3];
-            int pw = (w - x0 + dx - 1) / dx;
-            int ph = (h - y0 + dy - 1) / dy;
-            long k = png_pass(raw + used, got - used, pw, ph, &f, out,
+            int pw = (src.w - x0 + dx - 1) / dx;
+            int ph = (src.h - y0 + dy - 1) / dy;
+            long k = png_pass(raw + used, got - used, pw, ph, &src.f, out,
                               x0, y0, dx, dy);
 
             if (k < 0) {
@@ -523,7 +554,7 @@ load_png(const unsigned char *b, long n, tiku_image_t *out)
     }
     rc = TIKU_IMG_OK;
 done:
-    free(idat);
+    free(src.idat);
     free(raw);
     if (rc != TIKU_IMG_OK) {
         tiku_image_free(out);

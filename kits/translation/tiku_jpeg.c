@@ -720,9 +720,8 @@ sample(const jdec_t *d, int c, int x, int y)
                   (x * k->h / d->hmax)];
 }
 
-/** @brief The planes as 0xAARRGGBB: YCbCr to RGB, and four inks as YCCK
- *         when Adobe says so (the first three then YCbCr of the inverted
- *         inks), else CMYK as stored.  @return the pixels, or NULL. */
+/** @brief Convert component planes to ARGB using Adobe's declared transform.
+ *  @return Allocated pixels, or NULL. */
 static uint32_t *
 to_rgb(const jdec_t *d)
 {
@@ -740,15 +739,26 @@ to_rgb(const jdec_t *d)
             r = Y + ((91881 * (cr - 128)) >> 16);
             g = Y - ((22554 * (cb - 128) + 46802 * (cr - 128)) >> 16);
             bl = Y + ((116130 * (cb - 128)) >> 16);
+            if (d->ncomp == 3 && d->transform == 0) {
+                r = Y;
+                g = cb;
+                bl = cr;
+            }
             if (d->ncomp == 4) {
                 int k = sample(d, 3, x, y);
                 int cy = d->transform == 2 ? 255 - clamp8(r) : Y;
                 int ma = d->transform == 2 ? 255 - clamp8(g) : cb;
                 int ye = d->transform == 2 ? 255 - clamp8(bl) : cr;
 
-                r = (255 - cy) * (255 - k) / 255;
-                g = (255 - ma) * (255 - k) / 255;
-                bl = (255 - ye) * (255 - k) / 255;
+                if (d->transform == 0 || d->transform == 2) {
+                    r = cy * k / 255;
+                    g = ma * k / 255;
+                    bl = ye * k / 255;
+                } else {
+                    r = (255 - cy) * (255 - k) / 255;
+                    g = (255 - ma) * (255 - k) / 255;
+                    bl = (255 - ye) * (255 - k) / 255;
+                }
             }
             px[(long)y * d->w + x] = 0xff000000u |
                 ((uint32_t)clamp8(r) << 16) | ((uint32_t)clamp8(g) << 8) |

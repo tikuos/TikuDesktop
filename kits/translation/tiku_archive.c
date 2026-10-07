@@ -175,6 +175,18 @@ file_close(arc_stream_t *s)
 arc_stream_t *
 arc_file_stream(int fd, int64_t start, int64_t len, int64_t *consumed)
 {
+    struct stat st;
+
+    if (start < 0 || len < -1 ||
+        (len == -1 && (fstat(fd, &st) != 0 || st.st_size < start))) {
+        return NULL;
+    }
+    if (len == -1) {
+        len = st.st_size - start;
+    }
+    if (len > INT64_MAX - start) {
+        return NULL;
+    }
     file_stream_t *f = calloc(1, sizeof *f);
 
     if (f == NULL || (f->buf = malloc(FILE_BUF)) == NULL) {
@@ -365,22 +377,25 @@ gz_header(gzip_stream_t *g)
     return g->z != NULL ? 1 : -1;
 }
 
-/** @brief A member's end: what its decoder read past it goes back in
- *         front, then its trailer is checked.  @return 0, or -1. */
-static int
+/** @brief Restore read-ahead bytes and validate the member trailer.
+ *  @return OK, NOMEM, DAMAGED, or CHECKSUM. */
+static tiku_archive_err_t
 gz_trailer(gzip_stream_t *g)
 {
     unsigned char *next = malloc(PUSHBACK), t[8];
     long n = next != NULL ? tiku_inflater_tail(g->z, next, PUSHBACK) : -1;
     long i;
 
+    if (next == NULL) {
+        return TIKU_ARCHIVE_NOMEM;
+    }
     if (n < 0) {
         free(next);
-        return -1;
+        return TIKU_ARCHIVE_DAMAGED;
     }
     if (g->pb_len - g->pb_at > PUSHBACK - n) {
         free(next);
-        return -1;
+        return TIKU_ARCHIVE_DAMAGED;
     }
     if (g->pb_len > g->pb_at)
         memcpy(next + n, g->pb + g->pb_at, (size_t)(g->pb_len - g->pb_at));
@@ -394,14 +409,14 @@ gz_trailer(gzip_stream_t *g)
         int c = gz_byte(g);
 
         if (c < 0) {
-            return -1;
+            return TIKU_ARCHIVE_DAMAGED;
         }
         t[i] = (unsigned char)c;
     }
     g->members++;
     return (t[0] | t[1] << 8 | t[2] << 16 | (uint32_t)t[3] << 24) == g->crc &&
            (t[4] | t[5] << 8 | t[6] << 16 | (uint32_t)t[7] << 24) == g->size
-           ? 0 : -1;
+           ? TIKU_ARCHIVE_OK : TIKU_ARCHIVE_CHECKSUM;
 }
 
 /** @brief Decoded bytes, member after member. */
@@ -431,9 +446,11 @@ gz_read(arc_stream_t *s, unsigned char *buf, long max)
             g->size += (uint32_t)n;
             return n;
         }
-        if (n < 0 || gz_trailer(g) != 0) {
+        tiku_archive_err_t err = n < 0 ? TIKU_ARCHIVE_DAMAGED : gz_trailer(g);
+
+        if (err != TIKU_ARCHIVE_OK) {
             g->done = 1;
-            s->err = n < 0 ? TIKU_ARCHIVE_DAMAGED : TIKU_ARCHIVE_CHECKSUM;
+            s->err = err;
             if (g->under->err != TIKU_ARCHIVE_OK) {
                 s->err = g->under->err;
             }

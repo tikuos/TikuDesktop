@@ -393,7 +393,7 @@ from_utf16(const unsigned char *s, size_t len, int big, size_t *n)
     return (char *)out;
 }
 
-/** @brief Whether the declaration names a single-byte Latin encoding. */
+/** @brief Declared single-byte encoding: 1 for Latin-1, 2 for Windows-1252. */
 static int
 declared_latin(const unsigned char *s, size_t len)
 {
@@ -420,24 +420,35 @@ declared_latin(const unsigned char *s, size_t len)
     enc[k] = '\0';
     for (i = 0; i < sizeof latin / sizeof latin[0]; i++) {
         if (strcmp(enc, latin[i]) == 0) {
-            return 1;
+            return i == 3 || i == 4 ? 2 : 1;
         }
     }
     return 0;
 }
 
-/** @brief Latin-1 bytes as UTF-8 into a new buffer.  @return it. */
+/** @brief Latin-1 or Windows-1252 bytes as UTF-8 in a new buffer. */
 static char *
-from_latin(const unsigned char *s, size_t len, size_t *n)
+from_latin(const unsigned char *s, size_t len, size_t *n, int encoding)
 {
-    unsigned char *out = malloc(len * 2 + 1), *o = out;
+    static const unsigned short windows[32] = {
+        0x20ac, 0x0081, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021,
+        0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008d, 0x017d, 0x008f,
+        0x0090, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014,
+        0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x009d, 0x017e, 0x0178
+    };
+    unsigned char *out = malloc(len * (encoding == 2 ? 3 : 2) + 1), *o = out;
     size_t i;
 
     if (out == NULL) {
         return NULL;
     }
     for (i = 0; i < len; i++) {
-        o += put_utf8(o, s[i]);
+        unsigned cp = s[i];
+
+        if (encoding == 2 && cp >= 0x80 && cp <= 0x9f) {
+            cp = windows[cp - 0x80];
+        }
+        o += put_utf8(o, cp);
     }
     *o = '\0';
     *n = (size_t)(o - out);
@@ -452,6 +463,7 @@ static char *
 utf8_copy(const unsigned char *s, size_t len, size_t *n)
 {
     char *out;
+    int encoding;
 
     if (len >= 2 && ((s[0] == 0xff && s[1] == 0xfe) ||
                      (s[0] == '<' && s[1] == 0))) {
@@ -467,8 +479,8 @@ utf8_copy(const unsigned char *s, size_t len, size_t *n)
         s += 3;
         len -= 3;
     }
-    if (declared_latin(s, len)) {
-        return from_latin(s, len, n);
+    if ((encoding = declared_latin(s, len)) != 0) {
+        return from_latin(s, len, n, encoding);
     }
     if ((out = malloc(len + 1)) == NULL) {
         return NULL;

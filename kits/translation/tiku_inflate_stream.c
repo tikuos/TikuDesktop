@@ -430,11 +430,11 @@ match(tiku_inflater_t *z, int sym)
         return -1;
     }
     /* Deflate64's last length code carries sixteen bits from 3. */
-    e = z->deflate64 && sym == 28 ? bits(z, 16) + 3 : bits(z, lext[sym]);
+    e = bits(z, z->deflate64 && sym == 28 ? 16 : lext[sym]);
     if (e < 0) {
         return -1;
     }
-    z->copy_len = z->deflate64 && sym == 28 ? e : lbase[sym] + e;
+    z->copy_len = z->deflate64 && sym == 28 ? e + 3 : lbase[sym] + e;
     dsym = decode(z, &z->dist);
     if (dsym < 0 || dsym >= (z->deflate64 ? 32 : 30)) {
         return -1;

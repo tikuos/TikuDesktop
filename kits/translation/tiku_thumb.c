@@ -81,10 +81,33 @@ tiku_thumb_wanted(const tiku_thumb_q_t *q, const char *path)
     return tiku_image_is_image(path);
 }
 
+/**
+ * @brief Read @p path's identity, size and modification time, to the
+ *        nanosecond, into @p stamp.
+ *
+ * @return 1, or 0 when @p path cannot be read or is not a regular file.
+ */
+static int
+source_stamp(const char *path, tiku_thumb_stamp_t *stamp)
+{
+    struct stat st;
+
+    memset(stamp, 0, sizeof *stamp);
+    if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
+        return 0;
+    }
+    stamp->device = st.st_dev;
+    stamp->inode = st.st_ino;
+    stamp->bytes = st.st_size;
+    stamp->mtime = st.st_mtime;
+    stamp->mtime_ns = st.st_mtim.tv_nsec;
+    return 1;
+}
+
 int
 tiku_thumb_fresh(tiku_store_t *store, const char *path, int64_t mtime)
 {
-    int64_t made = 0;
+    tiku_thumb_stamp_t made;
 
     if (store == NULL || path == NULL) {
         return 0;
@@ -93,7 +116,10 @@ tiku_thumb_fresh(tiku_store_t *store, const char *path, int64_t mtime)
                             sizeof made) != (int)sizeof made) {
         return 0;
     }
-    return (made > mtime);
+    /* The stamp is the file as it was decoded; a model that is behind it
+     * has not seen that save, and stays fresh.  No stat() here: this runs
+     * for every row on every frame. */
+    return made.mtime >= mtime;
 }
 
 /** @brief Whether @p path is already queued or running. */
@@ -180,6 +206,7 @@ tiku_thumb_take(tiku_thumb_q_t *q, char *path, size_t max)
         return 0;
     }
     snprintf(q->active, sizeof q->active, "%s", job.path);
+    q->source_valid = source_stamp(job.path, &q->source);
     snprintf(path, max, "%s", job.path);
     return 1;
 }
@@ -208,10 +235,12 @@ void
 tiku_thumb_landed(tiku_thumb_q_t *q, tiku_store_t *store, const char *path,
                   int w, int h, tiku_image_t *thumb)
 {
-    struct stat st;
-    int64_t now_mtime = 0;
+    tiku_thumb_stamp_t current;
 
-    if (thumb != NULL && thumb->px != NULL && store != NULL) {
+    if (thumb != NULL && thumb->px != NULL && store != NULL &&
+        q->source_valid && strcmp(path, q->active) == 0 &&
+        source_stamp(path, &current) &&
+        memcmp(&current, &q->source, sizeof current) == 0) {
         uint32_t dim[2];
         char blob[TIKU_PATH_MAX];
 
@@ -228,25 +257,26 @@ tiku_thumb_landed(tiku_thumb_q_t *q, tiku_store_t *store, const char *path,
                     (void)mkdir(dir, 0755);
                 }
             }
-            (void)blob_write(blob, thumb->px,
+            if (blob_write(blob, thumb->px,
                              (size_t)thumb->w * (size_t)thumb->h *
-                                 sizeof *thumb->px);
+                                 sizeof *thumb->px) != 0) goto finished;
+        } else {
+            goto finished;
         }
         dim[0] = (uint32_t)w;
         dim[1] = (uint32_t)h;
         (void)tiku_state_write(store, path, TIKU_ATTR_THUMB_DIM, dim,
                                sizeof dim);
-        if (stat(path, &st) == 0) {
-            now_mtime = (int64_t)st.st_mtime + 1;
-        }
         (void)tiku_state_write(store, path, TIKU_ATTR_THUMB_TIME,
-                               &now_mtime, sizeof now_mtime);
+                               &current, sizeof current);
     }
+finished:
     if (thumb != NULL && thumb->px != NULL) {
         q->made++;
         tiku_image_free(thumb);
     }
     q->active[0] = '\0';
+    q->source_valid = 0;
 }
 
 int

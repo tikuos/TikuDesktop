@@ -467,9 +467,13 @@ circuit_project_sheets(tiku_circuit_t *const *scenes,
         return TIKU_CIRCUIT_NOMEM;
     }
     for (size_t i = 0; i < count; i++) {
-        if (!scenes[i] || !names[i] || strlen(names[i]) >= NAME_BYTES) {
+        if (!scenes[i] || !names[i]) {
             tiku_circuit_project_free(p);
             return TIKU_CIRCUIT_BAD;
+        }
+        if (strlen(names[i]) >= NAME_BYTES) {
+            tiku_circuit_project_free(p);
+            return TIKU_CIRCUIT_LIMIT;
         }
         sheet_t *s = &p->sheet[p->count++];
 

@@ -188,6 +188,13 @@ link(const of_layout_t *l, const of_frag_t *g, tiku_pdf_writer_t *w)
     if (g->link == NULL || g->w <= 0) {
         return;
     }
+    if (g->clipped) {
+        float bottom = top + h;
+        if (top < g->y + g->clip_top) top = g->y + g->clip_top;
+        if (bottom > g->y + g->clip_bottom) bottom = g->y + g->clip_bottom;
+        h = bottom - top;
+        if (h <= 0) return;
+    }
     if (g->link[0] != '#') {
         if (safe_link(g->link)) {
             tiku_pdf_writer_link(w, g->x, top, g->w, h, g->link);
@@ -236,6 +243,13 @@ of_draw_frag(of_doc_t *d, of_faces_t *fs, const of_frag_t *g, float dx,
 
     at.x += dx;
     at.y += dy;
+    if (g->clipped) {
+        if (g->clip_bottom <= g->clip_top) return;
+        tiku_pdf_writer_save(w);
+        tiku_pdf_writer_rect(w, -1000000, at.y + g->clip_top, 2000000,
+                              g->clip_bottom - g->clip_top);
+        tiku_pdf_writer_clip(w, 0);
+    }
     memset(&fill, 0, sizeof fill);
     if (g->kind == OF_FRAG_GLYPHS) {
         of_draw_glyphs(fs, g, dx, dy, w);
@@ -257,6 +271,7 @@ of_draw_frag(of_doc_t *d, of_faces_t *fs, const of_frag_t *g, float dx,
     } else if (g->kind == OF_FRAG_MATH && g->math != NULL) {
         of_math_draw(fs, g->math, at.x, at.y, w);
     }
+    if (g->clipped) tiku_pdf_writer_restore(w);
 }
 
 int

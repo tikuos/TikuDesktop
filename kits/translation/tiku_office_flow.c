@@ -108,9 +108,17 @@ upper(uint32_t cp)
     if (cp >= 0x450 && cp <= 0x45f) {
         return cp - 0x50;
     }
-    if (cp >= 0x100 && cp <= 0x17f && (cp & 1)) {
+    if (((cp >= 0x100 && cp <= 0x12f) ||
+         (cp >= 0x132 && cp <= 0x137) ||
+         (cp >= 0x14a && cp <= 0x177)) && (cp & 1)) {
         return cp - 1;              /* Latin Extended-A, pairs */
     }
+    if (((cp >= 0x13a && cp <= 0x148) ||
+         (cp >= 0x17a && cp <= 0x17e)) && !(cp & 1)) {
+        return cp - 1;
+    }
+    if (cp == 0x131) return 'I';
+    if (cp == 0x17f) return 'S';
     return cp == 0xff ? 0x178 : cp;
 }
 

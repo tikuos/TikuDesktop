@@ -363,7 +363,7 @@ tiku_circuit_eagle(const void *data, size_t bytes, const char *path,
             e.doc->font = tiku_ttf_open_mem(options->font_data,
                                             options->font_bytes);
             if (!e.doc->font) {
-                eagle_fail(&e, TIKU_CIRCUIT_NOMEM,
+                eagle_fail(&e, TIKU_CIRCUIT_BAD,
                            "Cannot open substitute font");
                 break;
             }

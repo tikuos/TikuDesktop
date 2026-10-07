@@ -1049,10 +1049,11 @@ axis_read(ch_chart_t *k, const tiku_xml_node_t *e, ch_axis_t *a)
     a->kind = tiku_xml_is(e, "c:valAx") ? CH_VAL_AX : CH_CAT_AX;
     a->date = tiku_xml_is(e, "c:dateAx");
     a->flat = on(e, "c:noMultiLvlLbl");
+    a->pos = v != NULL && v[0] != '\0' && v[1] == '\0' &&
+              strchr("bltr", v[0]) != NULL ? v[0] : 'b';
     v = str_of(e, "c:baseTimeUnit");
     a->time_unit = v == NULL ? 0 : strcmp(v, "months") == 0 ? 1 :
                    strcmp(v, "years") == 0 ? 2 : 0;
-    a->pos = v != NULL && strchr("bltr", v[0]) ? v[0] : 'b';
     a->deleted = on(e, "c:delete");
     a->reversed = (v = str_of(sc, "c:orientation")) != NULL &&
                   strcmp(v, "maxMin") == 0;

@@ -20,8 +20,8 @@ tiku_circuit_err_t
 circuit_group(tiku_circuit_t *d, const char *name, const char *value,
               tiku_circuit_t *child, double x, double y)
 {
-    if (!d || !child || child->font || child->layers || !isfinite(x) ||
-        !isfinite(y)) {
+    if (!d || !child || d == child || child->font || child->layers ||
+        !isfinite(x) || !isfinite(y)) {
         return TIKU_CIRCUIT_BAD;
     }
     /* A group's scene holds no groups, so drawing one recurses no further
@@ -37,15 +37,15 @@ circuit_group(tiku_circuit_t *d, const char *name, const char *value,
     }
     tiku_circuit_box_t b = child->bounds;
     circuit_point_t p[] = {{b.x0 + x, b.y0 + y}, {b.x1 + x, b.y1 + y}};
+    d->bytes += child->bytes;
+    d->points += child->points;
     tiku_circuit_err_t e = circuit_add(d, name, value, p, 2, 0,
                                        CIRCUIT_COPPER, 1, 1);
 
     if (e) {
+        d->bytes -= child->bytes;
+        d->points -= child->points;
         return e;
-    }
-    if (child->bytes > CIRCUIT_BYTES_MAX - d->bytes ||
-        child->points > CIRCUIT_POINTS_MAX - d->points) {
-        return TIKU_CIRCUIT_LIMIT;
     }
     circuit_shape_t *s = &d->shapes[d->count - 1];
 
@@ -53,8 +53,6 @@ circuit_group(tiku_circuit_t *d, const char *name, const char *value,
     s->group = tiku_circuit_retain(child);
     s->cx = x;
     s->cy = y;
-    d->bytes += child->bytes;
-    d->points += child->points;
     return TIKU_CIRCUIT_OK;
 }
 

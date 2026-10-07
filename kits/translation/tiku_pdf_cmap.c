@@ -285,7 +285,7 @@ cm_run_cid(const pdf_cmap_t *m, uint32_t code, int len)
             hi = mid - 1;
         }
     }
-    for (k = at; k >= 0 && k > at - 16 && m->run[k].len == len; k--) {
+    for (k = at; k >= 0 && m->run[k].len == len; k--) {
         if (code <= m->run[k].hi &&
             (best < 0 || m->run[k].seq > m->run[best].seq)) {
             best = k;

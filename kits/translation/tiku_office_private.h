@@ -487,6 +487,8 @@ typedef struct {
     of_float_t       *flt;          /**< OF_FRAG_BOX's and OF_FRAG_ART's */
     const of_math_t  *math;         /**< OF_FRAG_MATH's, its baseline at y */
     const char       *link;         /**< the link over it, or NULL       */
+    float             clip_top, clip_bottom; /**< clip limits relative to y */
+    unsigned char     clipped;      /**< vertical clip is active         */
 } of_frag_t;
 
 /** @brief One character or object of a paragraph, measured. */

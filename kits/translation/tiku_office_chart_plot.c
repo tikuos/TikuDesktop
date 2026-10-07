@@ -1074,7 +1074,7 @@ static void
 second_bar(pl_t *q, const ch_series_t *s, double total, double sum,
            const float *at)
 {
-    float y = at[1] + at[3] / 2;
+    float y = at[1] + at[3];
     dml_fill_t f;
     dml_line_t l;
     ch_box_t b;

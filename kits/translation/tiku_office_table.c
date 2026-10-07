@@ -206,49 +206,73 @@ border(const tb_t *tb, const tb_cell_t *c, int k)
     return edge ? &t->border[k] : &t->border[k % 2 == 0 ? 4 : 5];
 }
 
+/** @brief Intersect a fragment's vertical clip with this page's cell. */
+static void
+clip_cell_fragment(of_frag_t *f, float top, float bottom)
+{
+    top -= f->y;
+    bottom -= f->y;
+    if (!f->clipped || f->clip_top < top) f->clip_top = top;
+    if (!f->clipped || f->clip_bottom > bottom) f->clip_bottom = bottom;
+    f->clipped = 1;
+}
+
 /** @brief Cell @p c drawn with its top at @p y: its shading, contents
  *         and borders. */
 static int
-place_cell(of_pager_t *pg, tb_t *tb, const tb_cell_t *c, float y)
+place_cell(of_pager_t *pg, tb_t *tb, const tb_cell_t *c, float y, int first)
 {
     const of_table_t *t = tb->t;
     float x = tb->x + tb->xs[c->col], w = tb->xs[c->col + c->span] -
-              tb->xs[c->col], h = 0, top = margin(t, c->c, 0), off = 0;
+              tb->xs[c->col], top = margin(t, c->c, 0), off = 0;
+    struct { float full, before, visible; } height = {0};
     of_frag_t *f;
     int r, i, err = 0;
 
     for (r = c->row; r < c->row + c->rows && r < t->nrow; r++) {
-        h += tb->rh[r];
+        height.full += tb->rh[r];
+        if (r < first) height.before += tb->rh[r];
+    }
+    for (r = first; r < c->row + c->rows && r < t->nrow; r++) {
+        if (r > first && pg->lay && y + height.visible + tb->rh[r] >
+            pg_limit(pg) + 0.01f) break;
+        height.visible += tb->rh[r];
     }
     if (c->c->valign != 0) {
-        off = h - top - margin(t, c->c, 2) - c->h;
+        off = height.full - top - margin(t, c->c, 2) - c->h;
         off = off > 0 ? (c->c->valign == 1 ? off / 2 : off) : 0;
     }
-    err |= pg_box(pg->frags, x, y, w, h, c->c->fill);
+    err |= pg_box(pg->frags, x, y, w, height.visible, c->c->fill);
     for (i = 0; i < c->nfrag && err == 0; i++) {
         if ((f = of_vec_push(pg->frags)) == NULL) {
             return -1;
         }
         *f = ((of_frag_t *)tb->frags.p)[c->frag + i];
         f->x += x + margin(t, c->c, 1);
-        f->y += y + top + off;
+        f->y += y + top + off - height.before;
+        if (c->rows > 1) {
+            clip_cell_fragment(f, y, y + height.visible);
+        }
     }
-    err |= pg_rule(pg->frags, x, y, w, 0, border(tb, c, 0));
-    err |= pg_rule(pg->frags, x, y + h, w, 0, border(tb, c, 2));
-    err |= pg_rule(pg->frags, x, y, 0, h, border(tb, c, 1));
-    err |= pg_rule(pg->frags, x + w, y, 0, h, border(tb, c, 3));
+    if (first == c->row)
+        err |= pg_rule(pg->frags, x, y, w, 0, border(tb, c, 0));
+    if (height.before + height.visible >= height.full - 0.01f)
+        err |= pg_rule(pg->frags, x, y + height.visible, w, 0, border(tb, c, 2));
+    err |= pg_rule(pg->frags, x, y, 0, height.visible, border(tb, c, 1));
+    err |= pg_rule(pg->frags, x + w, y, 0, height.visible, border(tb, c, 3));
     return err;
 }
 
 /** @brief Row @p r's cells drawn at the pager's y. */
 static int
-place_row(of_pager_t *pg, tb_t *tb, int r)
+place_row(of_pager_t *pg, tb_t *tb, int r, int restart)
 {
     int i, err = 0;
 
     for (i = 0; i < tb->ncell && err == 0; i++) {
-        if (tb->cell[i].row == r) {
-            err = place_cell(pg, tb, &tb->cell[i], pg->y);
+        if (tb->cell[i].row == r || (restart && tb->cell[i].row < r &&
+            tb->cell[i].row + tb->cell[i].rows > r)) {
+            err = place_cell(pg, tb, &tb->cell[i], pg->y, r);
         }
     }
     pg->y += tb->rh[r];
@@ -268,14 +292,16 @@ place_rows(of_pager_t *pg, tb_t *tb)
         heads++;
     }
     for (r = 0; r < t->nrow && err == 0; r++) {
+        int restart = 0;
         if (pg->lay != NULL && pg->content && pg->y + tb->rh[r] >
             pg_limit(pg) + 0.01f) {
             err = pg_next_column(pg);
+            restart = 1;
             for (k = 0; k < heads && r > heads && err == 0; k++) {
-                err = place_row(pg, tb, k);
+                err = place_row(pg, tb, k, 0);
             }
         }
-        err |= place_row(pg, tb, r);
+        err |= place_row(pg, tb, r, restart);
     }
     return err;
 }
