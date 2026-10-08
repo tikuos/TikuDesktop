@@ -142,10 +142,10 @@ check-tools:
 	@python3 tests/kits/test_audit_tools.py
 	@python3 tests/kits/test_glyphdump_path.py
 
-# The comment and commit rules are house convention kept in the tikuOS
-# checkout's hygiene/, which is gitignored there and absent from a clone
-# of this tree alone.  Checked when present; said out loud when not,
-# because a check that silently did not run reads as a pass.  This tree's
+# The comment rules are the tikuOS checkout's (comment-style.md and
+# tools/check_comment_style.py), absent from a clone of this tree alone.
+# Checked when present; said out loud when not, because a check that
+# silently did not run reads as a pass.  This tree's
 # comments are written denser than the kernel's, so its ceilings are six
 # lines of prose and a twenty-line header rather than three and fifteen.
 # Size and documentation, the two rules the kernel's coding style is strict
