@@ -49,7 +49,7 @@ without the desktop. Running `make` inside
 `TikuTracker/`, `apps/` or `kits/` still forwards to this build.
 
 The optional `tiku-basic` host interpreter is compiled from
-`../kernel/shell/basic/tiku_basic.c`. Set `TIKUOS=/path/to/tikuOS` if the
+`../basic/tiku_basic.c`. Set `TIKUOS=/path/to/tikuOS` if the
 firmware checkout is elsewhere; without it, that helper is skipped with a
 message and the other products still build.
 

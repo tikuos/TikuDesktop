@@ -18,9 +18,9 @@
 
 #if TIKU_SHELL_ENABLE
 
-#include <kernel/console/tiku_console.h>
-#include <kernel/shell/tiku_shell.h>
-#include <kernel/shell/tiku_shell_io.h>
+#include <services/console/tiku_console.h>
+#include <shell/tiku_shell.h>
+#include <shell/tiku_shell_io.h>
 #include <kernel/vfs/tiku_vfs.h>
 
 #include <string.h>

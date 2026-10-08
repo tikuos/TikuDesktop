@@ -20,10 +20,10 @@
 
 #if TIKU_SHELL_ENABLE && TIKU_SHELL_CMD_BASIC
 
-#include <kernel/console/tiku_console.h>
-#include <kernel/shell/basic/tiku_basic.h>
-#include <kernel/shell/tiku_shell.h>
-#include <kernel/shell/tiku_shell_io.h>
+#include <services/console/tiku_console.h>
+#include <basic/tiku_basic.h>
+#include <shell/tiku_shell.h>
+#include <shell/tiku_shell_io.h>
 #include <kernel/vfs/tiku_vfs.h>
 #include <string.h>
 

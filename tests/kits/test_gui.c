@@ -19,7 +19,7 @@
 #include "tiku.h"
 #include <kernel/process/tiku_process.h>
 #include <kernel/vfs/tiku_vfs.h>
-#include <kernel/link/tiku_link_console.h>
+#include <services/link/tiku_link_console.h>
 
 #include "tiku_dl.h"
 #include "tiku_form.h"

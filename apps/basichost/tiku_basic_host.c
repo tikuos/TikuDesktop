@@ -12,10 +12,10 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
-#include <kernel/shell/tiku_shell.h>
+#include <shell/tiku_shell.h>
 #include <kernel/timers/tiku_clock.h>
 #include <kernel/vfs/tiku_vfs.h>
-#include "../../../kernel/shell/basic/tiku_basic.h"
+#include "../../../basic/tiku_basic.h"
 
 /*---------------------------------------------------------------------------*/
 /* The kernel, as libc                                                       */

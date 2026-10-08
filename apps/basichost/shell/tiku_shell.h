@@ -1,4 +1,4 @@
-/* tiku_shell.h -- the host's stand-in for kernel/shell/tiku_shell.h, for
+/* tiku_shell.h -- the host's stand-in for shell/tiku_shell.h, for
  * the BASIC interpreter compiled on the host: the console it prints to
  * and reads from, and the pumps it yields to, from tiku_basic_host.c.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>

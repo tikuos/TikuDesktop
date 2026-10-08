@@ -53,7 +53,7 @@ EXAMPLES      := $(patsubst %,$(BUILD)/examples/tiku-example-%,$(EXAMPLE_NAMES))
 # a program by running this, so what its output pane shows is what a board
 # would do -- not a re-implementation that agrees on good days.  Gated on
 # the TikuOS checkout being where TIKUOS says.
-BASIC_SRC   := $(TIKUOS)/kernel/shell/basic/tiku_basic.c
+BASIC_SRC   := $(TIKUOS)/basic/tiku_basic.c
 BASIC_GATES := -DTIKU_BASIC_GPIO_ENABLE=0 -DTIKU_BASIC_ADC_ENABLE=0 \
                -DTIKU_BASIC_I2C_ENABLE=0 -DTIKU_BASIC_LED_ENABLE=0 \
                -DTIKU_BASIC_RTC_ENABLE=0 -DTIKU_BASIC_NET_ENABLE=0 \
@@ -66,16 +66,16 @@ BASIC_TARGETS := $(BASICHOST)
 # The interpreter's headers and its .inl parts too: this is one
 # translation unit built from a tree that is edited elsewhere, and with
 # only the .c files named here an edit to any of them rebuilds nothing.
-BASIC_DEPS := $(wildcard $(TIKUOS)/kernel/shell/basic/*.h) \
+BASIC_DEPS := $(wildcard $(TIKUOS)/basic/*.h) \
               $(TIKUOS)/kernel/memory/tiku_mem.h \
-              $(wildcard $(TIKUOS)/kernel/shell/basic/*.inl) \
-              $(wildcard apps/basichost/kernel/shell/*.h)
+              $(wildcard $(TIKUOS)/basic/*.inl) \
+              $(wildcard apps/basichost/shell/*.h)
 
 $(BASICHOST): apps/basichost/tiku_basic_host.c $(BASIC_SRC) $(BASIC_DEPS) \
               | $(BUILD)
 	@mkdir -p $(dir $@)
 	$(CC) -O2 -std=gnu11 -o $@ apps/basichost/tiku_basic_host.c $(BASIC_SRC) \
-	    -Iapps/basichost -I$(TIKUOS) -I$(TIKUOS)/kernel/shell/basic $(BASIC_GATES)
+	    -Iapps/basichost -I$(TIKUOS) -I$(TIKUOS)/basic $(BASIC_GATES)
 else
 BASIC_TARGETS :=
 $(info tiku-basic not built: no TikuOS checkout at $(TIKUOS); set TIKUOS= to name one)

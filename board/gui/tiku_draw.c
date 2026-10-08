@@ -13,7 +13,7 @@
 
 #include "tiku_metrics.h"
 
-#include <kernel/link/tiku_link_console.h>
+#include <services/link/tiku_link_console.h>
 
 #include <string.h>
 

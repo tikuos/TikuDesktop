@@ -749,7 +749,7 @@ Ordering REMOVED→CREATED→CHANGED was chosen over arrival order for the diffe
    whole design.
 
 2. `sub` shell command - ~140 lines .c + ~25 lines .h, plus one command-table
-   entry in kernel/shell/tiku_shell.c, one Makefile line, one flag in
+   entry in shell/tiku_shell.c, one Makefile line, one flag in
    tiku_shell_config.h, and ~8 lines in the shell's existing TIKU_EVENT_VFS
    hook (tiku_shell.c:1441-1450, alongside tiku_shell_rules_on_vfs and
    tiku_shell_cmd_watch_on_vfs) to print `~<path>\n`. `sub add|del|list
@@ -770,7 +770,7 @@ Ordering REMOVED→CREATED→CHANGED was chosen over arrival order for the diffe
    and a 730 ms idle poll on a 9600-baud MSP430.
 
 4. RECOMMENDED, not required: `ls -v <dir>` emitting a value-hash column -
-   ~40 lines in kernel/shell/commands/tiku_shell_cmd_ls.c (render each child,
+   ~40 lines in shell/commands/tiku_shell_cmd_ls.c (render each child,
    FNV-1a it, print the hex). Collapses a 12-row device folder refresh from
    13 round trips to 1: ~730 ms -> ~250 ms on MSP430. Do this second if the
    `sub` command slips.
@@ -1441,7 +1441,7 @@ unsigned tiku_desk_ns_cap_gene
 
 **Firmware needed.** One optional new shell command, `sub` — ~220 lines total. It is NOT required for correctness: every part of this design runs today over `cat /sys/vfs/manifest`, `cat`, `ls`, `tree`, with the poll fallback `tiku_ns` already implements and ships. What `sub` buys is push liveness for `fresh=cached` nodes (sub-second query updates instead of a 1 s poll floor, and far fewer link round-trips on an idle device).
 
-Breakdown: `kernel/shell/commands/tiku_shell_cmd_sub.c` ~150 lines — `sub add <path>` / `sub del <path>` / `sub list` wrapping `tiku_vfs_watch()`/`tiku_vfs_unwatch()` with the shell process as subscriber, plus its own 8-entry node-pointer array (~32 B SRAM) so `sub`'s subscriptions are distinguishable from those the `watch` mode and the rules engine make on the same process; `tiku_shell_cmd_sub_on_vfs(node)` prints `~<path>\r\n` via `tiku_vfs_path_of()` when a rung node is in that array. Header ~40 lines. Wiring ~25 lines: command-table entry in `tiku_shell.c`, `TIKU_SHELL_CMD_SUB` flag in `tiku_shell_config.h`, the `.c` in the Makefile shell block, and one call added beside the existing `tiku_shell_cmd_watch_on_vfs()` / `tiku_shell_rules_on_vfs()` dispatch on `TIKU_EVENT_VFS`. It must also survive `rules_rearm()`'s wholesale `tiku_vfs_unwatch_all()` by re-subscribing idempotently, the same self-heal the `watch` mode already does.
+Breakdown: `shell/commands/tiku_shell_cmd_sub.c` ~150 lines — `sub add <path>` / `sub del <path>` / `sub list` wrapping `tiku_vfs_watch()`/`tiku_vfs_unwatch()` with the shell process as subscriber, plus its own 8-entry node-pointer array (~32 B SRAM) so `sub`'s subscriptions are distinguishable from those the `watch` mode and the rules engine make on the same process; `tiku_shell_cmd_sub_on_vfs(node)` prints `~<path>\r\n` via `tiku_vfs_path_of()` when a rung node is in that array. Header ~40 lines. Wiring ~25 lines: command-table entry in `tiku_shell.c`, `TIKU_SHELL_CMD_SUB` flag in `tiku_shell_config.h`, the `.c` in the Makefile shell block, and one call added beside the existing `tiku_shell_cmd_watch_on_vfs()` / `tiku_shell_rules_on_vfs()` dispatch on `TIKU_EVENT_VFS`. It must also survive `rules_rearm()`'s wholesale `tiku_vfs_unwatch_all()` by re-subscribing idempotently, the same self-heal the `watch` mode already does.
 
 Explicitly NOT built in firmware: any predicate parser, matcher, or result channel. Also considered and rejected: a paged/offset manifest read to fix truncation — the existing `tree` walk plus per-node probing covers it host-side, and a second manifest surface would be a new format to keep in sync.
 

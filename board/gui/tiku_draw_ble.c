@@ -14,8 +14,8 @@
 #include "tiku_draw_ble.h"
 #include "tiku_draw.h"
 
-#include <kernel/link/tiku_link_ble.h>
-#include <kernel/link/tiku_link_console.h>
+#include <services/link/tiku_link_ble.h>
+#include <services/link/tiku_link_console.h>
 #include <kernel/vfs/tiku_vfs.h>
 #include <interfaces/bluetooth/tiku_ble_serial.h>
 

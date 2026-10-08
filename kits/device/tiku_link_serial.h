@@ -25,7 +25,7 @@
 
 /*
  * The frame inside the channel, shared with the kernel's
- * kernel/link/tiku_link_console.h:
+ * services/link/tiku_link_console.h:
  *
  *   +0  ctl      bits 0-1 the kind, bit 7 WANT_ACK, the other bits zero
  *   +1  seq      DATA and SYN: this frame's number; ACK: the last delivered

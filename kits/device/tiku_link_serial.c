@@ -10,7 +10,7 @@
  * acknowledges, written again when an acknowledgement is late and given
  * up on after enough tries.  What the board sends comes unpaced, checked
  * and counted here by the rules the board's receiver keeps
- * (kernel/link/tiku_link_console.c).
+ * (services/link/tiku_link_console.c).
  *
  * SPDX-License-Identifier: Apache-2.0
  */

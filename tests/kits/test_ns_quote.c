@@ -5,7 +5,7 @@
 #include <string.h>
 #include "tiku_ns.h"
 
-/** @brief The board's own tokeniser, from kernel/shell/tiku_shell_parser.c. */
+/** @brief The board's own tokeniser, from shell/tiku_shell_parser.c. */
 static int tokens(char *line, const char *argv[], int max)
 {
     int argc = 0;

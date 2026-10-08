@@ -11,7 +11,7 @@ else instead of carrying a second palette of its own.
 
 The one language it knows is TikuOS BASIC, and it knows it from the
 interpreter's own tables rather than from a plausible-looking list --
-kernel/shell/basic/tiku_basic_token.inl's crunch table plus every
+basic/tiku_basic_token.inl's crunch table plus every
 spelling the dispatchers match by hand.  Highlighting that lies is
 worse than none: a word painted as reserved that the interpreter would
 treat as a variable teaches the reader something false about their own

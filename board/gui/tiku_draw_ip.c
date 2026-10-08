@@ -14,7 +14,7 @@
 
 #include "tiku_draw.h"
 
-#include <kernel/link/tiku_link_console.h>
+#include <services/link/tiku_link_console.h>
 #include <tikukits/net/link/tiku_kits_net_link_ip.h>
 
 #include <stdio.h>
