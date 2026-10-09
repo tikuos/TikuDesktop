@@ -1,5 +1,5 @@
 /* tiku_sdr.h -- TikuSDR's shared types and functions.  TikuSDR shows a
- * board's radio receiver as a spectrum analyser: the board, an ESP32-C61
+ * board's radio receiver as a spectrum analyser: an ESP32-C5 or ESP32-C61
  * whose firmware has the receiver, computes each spectrum itself and sends
  * it as one line; TikuSDR stitches a sweep's slices into one trace, shows
  * the spectra as traces on a graticule under a spectrogram, puts markers
@@ -51,7 +51,7 @@
  * band, is the first wide view.  A version 1 recording plays views up to
  * SDR_ONE_V1 MHz wide as one spectrum. */
 #define SDR_TUNE_LO      2200.0
-#define SDR_TUNE_HI      2700.0
+#define SDR_TUNE_HI      5900.0
 #define SDR_SPAN_MIN     1.0
 #define SDR_LIVE_SPAN    24.0
 #define SDR_ONE_V1       40.0
@@ -115,7 +115,8 @@ enum {
     CMD_REF_SHOW, CMD_OCCUPANCY, CMD_OCC_PLAN, CMD_OCC_RESET, CMD_OCC_EXPORT,
     CMD_TRIGGER, CMD_CAPS, CMD_FFT, CMD_RATE, CMD_BOOK_ADD, CMD_BOOK_NEXT,
     CMD_BOOK_CLEAR, CMD_LOOP_A, CMD_LOOP_B, CMD_LOOP, CMD_OCC_PAGE, CMD_HEALTH,
-    CMD_RBW
+    CMD_RBW,
+    CMD_TUNE5 = 1000                /* + MHz offset from 5000 */
 };
 
 /* Where marker peak moves go: the highest peak, the highest peak lower
@@ -275,11 +276,11 @@ typedef struct {
     tiku_field_input_t input[SDR_FIELDS];
     tiku_choice_t choice[SDR_CHOICES];  /* the panel's drop-down lists */
     int trace_sel;                  /* the trace the panel sets        */
-    tiku_alert_t alert;             /* the alert that no ESP32-C61 is
+    tiku_alert_t alert;             /* the alert that no receiver is
                                        connected                       */
     sdr_model_t model;
     /* The chosen board, its port and its MCU; names lists the mounted
-     * ESP32-C61s only, one a line. */
+     * supported ESP32 receivers, one a line. */
     char board[64], port[160], mcu[48], names[1024];
     int looking;                    /* the first look at the boards is
                                        due                             */
@@ -289,6 +290,7 @@ typedef struct {
     int caps_queued, caps_inflight, caps_known;
     unsigned caps_rates, caps_ffts;
     int caps_lo, caps_hi;
+    int caps_band_count, caps_band_lo[4], caps_band_hi[4];
     double rbw_list[SDR_RBW_MAX];   /* the RBW list's bin spacings, kHz,
                                        after its Auto row              */
     int rbw_count;
@@ -383,6 +385,10 @@ void sdr_trigger_cancel(sdr_t *st);
 void sdr_trigger_tick(sdr_t *st);
 /** @brief Parse supported rates, FFT sizes and tuning limits from sdr info. */
 int sdr_caps_parse(sdr_t *st, const char *line);
+/** @brief Parse up to four ordered, disjoint ranges from sdr bands. */
+int sdr_bands_parse(sdr_t *st, const char *line);
+/** @brief Whether one reported band contains the complete tuning interval. */
+int sdr_tuning_valid(const sdr_t *st, int first, int last);
 /** @brief Cycle through supported FFT sizes or rates that fit the current view. */
 void sdr_acquisition_cycle(sdr_t *st, int fft);
 /** @brief Whether the requested acquisition fits reported receiver capabilities. */
@@ -415,10 +421,9 @@ void sdr_history_scroll(sdr_model_t *model, int rows);
  *         256-point spectra; trace 1 the average of four spectra, the
  *         others off; no marker on, and markers set to follow peaks. */
 void sdr_model_init(sdr_model_t *m);
-/** @brief Make @p start and @p stop a view the board can give: in order,
- *         at least SDR_SPAN_MIN apart, and inside SDR_TUNE_LO to
- *         SDR_TUNE_HI, where a range up to 500 MHz wide is moved whole and
- *         a wider one becomes all of it; both rounded to the kHz. */
+/** @brief Fit an ordered view, at least 1 MHz wide, inside 2200–2700 or
+ *         4900–5900 MHz. A lower endpoint at or above 3800 selects the
+ *         upper band; firmware capabilities separately gate acquisition. */
 void sdr_range_fit(double *start, double *stop);
 /** @brief Set the view to @p start to @p stop, fitted: one spectrum at the
  *         narrowest rate that holds it up to one_max MHz, a sweep of slices

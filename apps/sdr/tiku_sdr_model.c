@@ -62,22 +62,24 @@ void sdr_range_fit(double *start, double *stop)
 {
     double a = *start < *stop ? *start : *stop;
     double b = *start < *stop ? *stop : *start;
+    double low = a >= 3800.0 ? 4900.0 : SDR_TUNE_LO;
+    double high = a >= 3800.0 ? SDR_TUNE_HI : 2700.0;
 
-    if (b - a > SDR_TUNE_HI - SDR_TUNE_LO) {
-        a = SDR_TUNE_LO;
-        b = SDR_TUNE_HI;
+    if (b - a > high - low) {
+        a = low;
+        b = high;
     }
     if (b - a < SDR_SPAN_MIN) {
         a = (a + b - SDR_SPAN_MIN) / 2;
         b = a + SDR_SPAN_MIN;
     }
-    if (a < SDR_TUNE_LO) {
-        b += SDR_TUNE_LO - a;
-        a = SDR_TUNE_LO;
+    if (a < low) {
+        b += low - a;
+        a = low;
     }
-    if (b > SDR_TUNE_HI) {
-        a -= b - SDR_TUNE_HI;
-        b = SDR_TUNE_HI;
+    if (b > high) {
+        a -= b - high;
+        b = high;
     }
     *start = round(a * 1000.0) / 1000.0;
     *stop = round(b * 1000.0) / 1000.0;
@@ -123,19 +125,20 @@ static void one_spectrum(sdr_model_t *m)
 /** @brief Plan a sweep of the view at rate code @p rate: slices
  *         slice_step[rate] MHz apart from the first whose kept middle
  *         reaches the start, moved down whole when the last would pass
- *         SDR_TUNE_HI; the first and last centres into @p first and
- *         @p last, either NULL.  @return how many slices. */
+ *         the selected band's upper bound; the first and last centres into
+ *         @p first and @p last, either NULL. @return how many slices. */
 static int plan_slices(const sdr_model_t *m, int rate, int *first, int *last)
 {
     double half = slice_half[rate];
     int step = slice_step[rate], count, a, b;
+    int high = m->start >= 3800.0 ? (int)SDR_TUNE_HI : 2700;
 
     a = (int)floor(m->start + half);
     count = (int)ceil((m->stop - a - half) / step);
     count = count < 0 ? 1 : count + 1;
     b = a + (count - 1) * step;
-    if (b > (int)SDR_TUNE_HI) {
-        b = (int)SDR_TUNE_HI;
+    if (b > high) {
+        b = high;
         a = b - (count - 1) * step;
     }
     if (first) *first = a;

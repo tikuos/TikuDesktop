@@ -1,7 +1,7 @@
 # TikuSDR
 
-A board's radio receiver as a spectrum analyser.  The board (an ESP32-C61
-whose firmware has the receiver: `TIKU_DRV_SDR_ESP_ENABLE=1`) captures raw
+A board's radio receiver as a spectrum analyser. The ESP32-C5 or ESP32-C61
+board needs receiver firmware (`TIKU_DRV_SDR_ESP_ENABLE=1`). It captures raw
 I/Q, computes each spectrum itself and sends one line per spectrum;
 TikuSDR keeps, stitches and draws them.
 
@@ -19,7 +19,7 @@ desktop hoists it into its Tiku menu.
   the narrowest sample rate that holds it (4, 8, 10, 20 or 40 MS/s, so 2
   MHz shows 15.6 kHz bins): a 40 MS/s capture is flat over its middle 24
   MHz alone, 15-30 dB down beyond.  Wider is swept in 16 MHz slices,
-  anywhere from 2200 to 2700 MHz, all at the gain the board holds (an
+  within the receiver's reported bands, all at the gain the board holds (an
   older board's slices, each at its own automatic gain, have their noise
   floors levelled to a common one). The Mode button distinguishes a single
   capture from a sweep, independently of connection status; it swaps the last
@@ -56,7 +56,7 @@ and marks such lines `held`; a capture loud enough to clip is taken 16 steps
 lower, and TikuSDR raises a line by the steps it was held below 60 (about a
 decibel each), so levels stand still instead of chasing every burst.
 
-Only ESP32-C61s are offered, as their die says.  With none connected
+ESP32-C5 and ESP32-C61 devices are offered. With none connected
 through the desktop's Devices menu, TikuSDR says "No software-defined
 radio detected" over its window as soon as the desktop has said which
 boards it has (out of process that is a turn after start, so
@@ -105,7 +105,21 @@ and with them a chosen RBW;
 versions 1 and 2 remain readable. Playback supports labelled bookmarks and
 interval loops with bounded seeking.
 
-Receiver capabilities come from `sdr info`. Overrides are limited to reported
+Receiver capabilities come from `sdr info`, plus the C5's `sdr bands` reply.
+C5 USB opening asserts DTR and RTS together and disables hangup-on-close.
+The C5 can display 2.4 GHz and 5 GHz: select a reported 5 GHz channel in Tune
+or enter a center such as 5180 MHz. Captures and sweeps must stay in a single
+reported band; no sweep is issued through the gap between bands. Recordings,
+references and named setups preserve 5 GHz ranges. The existing occupancy
+plans still describe only 2.4 GHz Wi-Fi, BLE and 802.15.4.
+
+5 GHz levels are uncalibrated. The C5 PHY can show a large DC offset and
+clipping at high gain; lower gain when inspecting such captures. Gain index
+steps and the display's gain compensation do not establish calibrated dBm.
+The display uses C61-derived passband widths; the C5's frequency response
+still needs measurement against a controlled source.
+
+Overrides are limited to reported
 and implemented choices; legacy firmware retains automatic acquisition.
 Capture health distinguishes stale data, rejected spectra, incomplete sweeps
 and local buffer overflow. Clipping remains explicitly unknown unless a future

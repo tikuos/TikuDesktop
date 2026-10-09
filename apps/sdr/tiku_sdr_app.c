@@ -39,6 +39,18 @@ static int tune_rows(const sdr_t *st, tiku_menu_list_t *menu)
         menu->item[n].command = CMD_TUNE + ble[i][1] - 2400;
         menu->item[n].enabled = on;
     }
+    if (sdr_tuning_valid(st, 5180, 5825)) {
+        static const int channels[] = {36, 40, 44, 48, 149, 153, 157, 161, 165};
+        menu->item[n++].separator = 1;
+        for (unsigned i = 0; i < sizeof channels / sizeof channels[0] &&
+             n < TIKU_MENUSET_ITEMS; i++, n++) {
+            int mhz = 5000 + 5 * channels[i];
+            snprintf(menu->item[n].label, sizeof menu->item[n].label,
+                     "Wi-Fi %d · %d MHz", channels[i], mhz);
+            menu->item[n].command = CMD_TUNE5 + mhz - 5000;
+            menu->item[n].enabled = on;
+        }
+    }
     return n;
 }
 
@@ -465,7 +477,8 @@ static void missing(sdr_t *st)
 {
     tiku_alert_open(&st->alert, TIKU_ALERT_STOP, 0,
                     "No software-defined radio detected. TikuSDR currently "
-                    "supports the ESP32-C61 as its SDR. Please connect one "
+                    "supports ESP32-C5 and ESP32-C61 receivers. "
+                    "Please connect one "
                     "through the Devices menu.", "OK");
     st->dirty = 1;
 }
@@ -612,6 +625,11 @@ static int sdr_pick(void *state, uint32_t window, int command)
     else if (command == CMD_RECORD || command == CMD_REPLAY ||
              command == CMD_EXPORT || command == CMD_PICTURE)
         tape(st, command);
+    else if (command >= CMD_TUNE5 && command <= CMD_TUNE5 + 900 &&
+             sdr_tuning_valid(st, 5000 + command - CMD_TUNE5,
+                             5000 + command - CMD_TUNE5))
+        centre_at(st, 5000 + command - CMD_TUNE5,
+                  m->sweep ? SDR_LIVE_SPAN : m->stop - m->start);
     else if (command >= CMD_TUNE && command < CMD_CHOICE)
         /* A channel: the view's span about it, or SDR_LIVE_SPAN in place
          * of a sweep. */

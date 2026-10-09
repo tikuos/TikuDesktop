@@ -38,8 +38,9 @@ void sdr_zoom(sdr_t *st, double fraction, double factor)
     if (fraction < 0) fraction = 0;
     if (fraction > 1) fraction = 1;
     double next = span * factor;
+    double maximum = st->model.start >= 3800.0 ? 1000.0 : 500.0;
     if (next < SDR_SPAN_MIN) next = SDR_SPAN_MIN;
-    if (next > SDR_TUNE_HI - SDR_TUNE_LO) next = SDR_TUNE_HI - SDR_TUNE_LO;
+    if (next > maximum) next = maximum;
     double start = st->model.start + (span - next) * fraction;
     sdr_navigate(st, start, start + next, 1);
 }

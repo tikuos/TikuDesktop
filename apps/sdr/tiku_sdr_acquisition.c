@@ -36,8 +36,53 @@ int sdr_caps_parse(sdr_t *st, const char *line)
     st->caps_rates = rates; st->caps_ffts = ffts;
     st->model.caps_rates = rates; st->model.caps_ffts = ffts;
     st->caps_lo = lo; st->caps_hi = hi; st->caps_known = 1;
+    st->caps_band_count = 1;
+    st->caps_band_lo[0] = lo; st->caps_band_hi[0] = hi;
     st->dirty = 1;
     return 1;
+}
+
+int sdr_bands_parse(sdr_t *st, const char *line)
+{
+    char text[256], *save = NULL, *p;
+    int lo[4], hi[4], values[8], count = 0, bank_seen = 0;
+    if (st->caps_known != 1 || strncmp(line, "SDR bands ", 10) ||
+        strlen(line) >= sizeof text) return 0;
+    snprintf(text, sizeof text, "%s", line + 10);
+    for (p = strtok_r(text, " ", &save); p; p = strtok_r(NULL, " ", &save)) {
+        char *end;
+        long value;
+        if (!strcmp(p, "bank_bytes")) {
+            p = strtok_r(NULL, " ", &save);
+            if (!p || (strcmp(p, "65536") && strcmp(p, "131072")) ||
+                strtok_r(NULL, " ", &save)) return 0;
+            bank_seen = 1;
+            break;
+        }
+        if (count == 8 || *p < '0' || *p > '9') return 0;
+        value = strtol(p, &end, 10);
+        if (*end || value < 2000 || value > 6000) return 0;
+        values[count++] = (int)value;
+    }
+    if (!bank_seen || !count || count % 2) return 0;
+    for (int i = 0; i < count / 2; i++) {
+        lo[i] = values[2 * i]; hi[i] = values[2 * i + 1];
+        if (lo[i] >= hi[i] || (i && lo[i] <= hi[i - 1])) return 0;
+    }
+    memcpy(st->caps_band_lo, lo, (size_t)(count / 2) * sizeof lo[0]);
+    memcpy(st->caps_band_hi, hi, (size_t)(count / 2) * sizeof hi[0]);
+    st->caps_band_count = count / 2;
+    st->dirty = 1;
+    return 1;
+}
+
+int sdr_tuning_valid(const sdr_t *st, int first, int last)
+{
+    if (st->caps_known != 1 || first > last) return 0;
+    for (int i = 0; i < st->caps_band_count; i++)
+        if (first >= st->caps_band_lo[i] && last <= st->caps_band_hi[i])
+            return 1;
+    return 0;
 }
 
 int sdr_acquisition_valid(const sdr_t *st)
@@ -46,9 +91,9 @@ int sdr_acquisition_valid(const sdr_t *st)
     unsigned fft = m->nfft == 64 ? 1 : m->nfft == 128 ? 2 : 4;
     if (st->caps_known != 1) return !m->rate_override && !m->fft_override;
     if (!(st->caps_rates & (1u << m->rate)) || !(st->caps_ffts & fft)) return 0;
-    return m->sweep ? m->first >= st->caps_lo && m->last <= st->caps_hi &&
+    return m->sweep ? sdr_tuning_valid(st, m->first, m->last) &&
                       sdr_model_slices(m) <= SDR_SLICES_MAX :
-        m->tune >= st->caps_lo && m->tune <= st->caps_hi &&
+        sdr_tuning_valid(st, m->tune, m->tune) &&
         m->stop - m->start + 2 * fabs((m->start + m->stop) / 2 - m->tune) <=
         acquisition_rates[m->rate] * (m->rate <= 1 ? .6 : 1.0) + 1e-6;
 }

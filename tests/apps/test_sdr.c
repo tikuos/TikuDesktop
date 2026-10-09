@@ -9,7 +9,26 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
+#include <stdarg.h>
+#include <errno.h>
 
+static int control_calls, control_bits, control_fail;
+
+/** @brief Record an atomic modem-line assertion on the simulated C5 USB port. */
+static int sdr_test_ioctl(int fd, unsigned long request, ...)
+{
+    va_list args;
+    assert(fd >= 0 && request == TIOCMBIS);
+    va_start(args, request);
+    control_bits = *va_arg(args, int *);
+    va_end(args);
+    control_calls++;
+    if (control_fail) { errno = EIO; return -1; }
+    return 0;
+}
+
+#define ioctl sdr_test_ioctl
 #include "../../apps/sdr/tiku_sdr_app.c"
 #include "../../apps/sdr/tiku_sdr_link.c"
 #include "../../apps/sdr/tiku_sdr_marker.c"
@@ -21,6 +40,7 @@
 #include "../../apps/sdr/tiku_sdr_splash.c"
 #include "../../apps/sdr/tiku_sdr_tape.c"
 #include "../../apps/sdr/tiku_sdr_view.c"
+#undef ioctl
 
 #define PROMPT "\r\ntikuOS:/> "
 
@@ -165,6 +185,7 @@ static int mcu_named(void *ctx, const char *board, char *out, size_t max)
 {
     (void)ctx;
     snprintf(out, max, "%s", !strncmp(board, "nrf", 3) ? "nRF54L15" :
+             !strncmp(board, "esp32-c5", 8) ? "ESP32-C5" :
              !strncmp(board, "esp", 3) ? "ESP32-C61" : "");
     return (int)strlen(out);
 }
@@ -1149,6 +1170,9 @@ static void no_esp32(const tiku_app_services_t *services)
 
     assert(receiver_part("ESP32-C61") && receiver_part("esp32c61"));
     assert(receiver_part("esp32-c61-ttyUSB1") && receiver_part("ESP32_C61"));
+    assert(receiver_part("ESP32-C5") == 5 && receiver_part("esp32c5") == 5);
+    assert(receiver_part("esp32-c5-devkitc1") == 5 && receiver_part("ESP32_C5") == 5);
+    assert(!receiver_part("ESP32-C50") && !receiver_part("ESP32-C610"));
     assert(!receiver_part("ESP32-C6") && !receiver_part("nRF54L15"));
     assert(!receiver_part("") && !receiver_part("ESP32"));
     assert(listed("a\nb\n", "b") && listed("a\nb", "b") && !listed("ab\n", "a"));
@@ -1166,7 +1190,7 @@ static void no_esp32(const tiku_app_services_t *services)
     assert(!st->looking && st->alert.open && st->alert.kind == TIKU_ALERT_STOP);
     assert(!strncmp(st->alert.text, "No software-defined radio detected. ",
                     36));
-    assert(strstr(st->alert.text, "supports the ESP32-C61 as its SDR. ") &&
+    assert(strstr(st->alert.text, "supports ESP32-C5 and ESP32-C61 receivers. ") &&
            strstr(st->alert.text, "through the Devices menu."));
     assert(st->alert.nbutton == 1 && !strcmp(st->alert.button[0], "OK") &&
            st->alert.dflt == 0 && st->alert.cancel == 0);
@@ -1234,6 +1258,24 @@ static void no_esp32(const tiku_app_services_t *services)
     assert(!strcmp(last_menus.menu[5].title, "Device") &&
            last_menus.menu[5].nitem == 2 && last_menus.menu[5].item[1].marked);
     tiku_sdr_app.stop(st);
+    told = "esp32-c5\nesp32-c61\nnrf54l15\n";
+    current = "esp32-c5";
+    st = started(&without);
+    ticks(st, &now, 1);
+    assert(st->state == SDR_RELEASING && !strcmp(lent, "esp32-c5"));
+    assert(!strcmp(st->names, "esp32-c5\nesp32-c61\n"));
+    tiku_sdr_app.board_said(st, TIKU_APP_BOARD_RELEASED, "esp32-c5");
+    assert(st->state == SDR_OPENING && control_calls == 1);
+    assert(control_bits == (TIOCM_DTR | TIOCM_RTS));
+    tiku_sdr_app.stop(st);
+    control_fail = 1;
+    st = started(&without);
+    ticks(st, &now, 1);
+    tiku_sdr_app.board_said(st, TIKU_APP_BOARD_RELEASED, "esp32-c5");
+    assert(st->state == SDR_RECLAIMING && st->fd < 0);
+    assert(control_calls == 2);
+    tiku_sdr_app.stop(st);
+    control_fail = 0;
     current = "";
     told = NULL;
 }
@@ -1449,13 +1491,13 @@ static void plot_navigation_tests(const tiku_app_services_t *services)
     for (int i = 0; i < 60; i++) sdr_zoom(st, 0.25, 0.5);
     assert(m->stop - m->start == SDR_SPAN_MIN && st->previous_count <= SDR_VIEWS);
     sdr_zoom(st, 0, 1e6);
-    assert(m->start == SDR_TUNE_LO && m->stop == SDR_TUNE_HI);
+    assert(m->start == SDR_TUNE_LO && m->stop == 2700.0);
     sdr_zoom(st, NAN, 0.5);
     assert(m->start == SDR_TUNE_LO);
     snprintf(st->shown, sizeof st->shown, "recording.sdrlog");
     assert(!sdr_enabled(st, CMD_ZOOM_IN) && !sdr_enabled(st, CMD_VIEW_BACK));
     sdr_zoom(st, 0.5, 0.5);
-    assert(m->start == SDR_TUNE_LO && m->stop == SDR_TUNE_HI);
+    assert(m->start == SDR_TUNE_LO && m->stop == 2700.0);
     st->shown[0] = '\0';
     sdr_model_range(m, start, stop);
     unsigned char values[256];
@@ -2020,6 +2062,65 @@ static void bookmark_tests(const tiku_app_services_t *services, const char *dir)
     unlink(path);
 }
 
+/** @brief C5 bands constrain tuning, expose 5 GHz channels and survive recording playback. */
+static void dual_band_tests(const char *dir)
+{
+    sdr_t *st = calloc(1, sizeof *st);
+    tiku_menu_list_t menu = {0};
+    char line[1200], path[600];
+    assert(st);
+    st->fd = -1;
+    st->state = SDR_RUNNING;
+    sdr_model_init(&st->model);
+    sdr_tools_init(st);
+    snprintf(st->mcu, sizeof st->mcu, "ESP32-C5");
+    st->caps_inflight = 1;
+    take_line(st, "SDR bank yes rates 80 40 20 10 8 4 nfft 64 128 256 tune 2400 2500");
+    assert(st->caps_known == 1 && st->caps_band_count == 1);
+    take_prompt(st);
+    assert(st->caps_inflight == 2 && st->pending);
+    take_line(st, "SDR bands 2400 2500 4900 5900 bank_bytes 131072");
+    take_prompt(st);
+    assert(st->caps_band_count == 2 && !st->caps_inflight && !st->pending);
+    assert(sdr_tuning_valid(st, 4900, 5900));
+    assert(!sdr_tuning_valid(st, 2490, 4910) && !sdr_tuning_valid(st, 3000, 3000));
+    const char *bad[] = {
+        "SDR bands 2400 2500 4900 bank_bytes 131072",
+        "SDR bands 2400 2500 2490 5900 bank_bytes 131072",
+        "SDR bands 2400 2500 4900 999999999999999999999999 bank_bytes 131072",
+        "SDR bands 2400 2500 bank_bytes 131072 junk",
+        "SDR bands 2400 2500 bank_bytes 0",
+        "SDR bands 2500 2400 bank_bytes 131072"
+    };
+    for (unsigned i = 0; i < sizeof bad / sizeof bad[0]; i++) {
+        assert(!sdr_bands_parse(st, bad[i]) && st->caps_band_count == 2);
+        assert(st->caps_band_hi[1] == 5900);
+    }
+    int rows = tune_rows(st, &menu);
+    assert(rows == 27 && menu.item[18].command == CMD_TUNE5 + 180 && menu.item[18].enabled);
+    sdr_model_range(&st->model, 5168, 5192);
+    sdr_zoom(st, 1, 10000);
+    assert(st->model.start == 4900 && st->model.stop == 5900);
+    sdr_model_range(&st->model, 5168, 5192);
+    assert(st->model.tune == 5180 && sdr_acquisition_valid(st));
+    snprintf(path, sizeof path, "%s/c5-5ghz.sdrlog", dir);
+    assert(!sdr_rec_start(st, path));
+    held_line(line, sizeof line, 5180, 256, 100, 60);
+    assert(sdr_model_line(&st->model, line) == 1);
+    sdr_rec_line(st, line, 1);
+    sdr_rec_stop(st);
+    st->state = SDR_IDLE;
+    assert(!sdr_play_start(st, path));
+    sdr_play_seek(st, 1); sdr_play_tick(st);
+    assert(st->model.tune == 5180 && st->model.spectra == 1);
+    sdr_play_stop(st);
+    unlink(path);
+    assert(sdr_caps_parse(st, "SDR bank yes rates 40 nfft 256 tune 2200 2700"));
+    assert(st->caps_band_count == 1 && !sdr_acquisition_valid(st));
+    assert(tune_rows(st, &menu) == 17);
+    free(st);
+}
+
 int main(void)
 {
     tiku_app_services_t services = {.open = opened, .frame = frame,
@@ -2044,6 +2145,7 @@ int main(void)
     workspace_tests(dir);
     measurement_tests(dir);
     acquisition_tests(dir);
+    dual_band_tests(dir);
     rbw_tests(dir);
     trigger_tests(dir);
     bookmark_tests(&services, dir);
@@ -2055,10 +2157,11 @@ int main(void)
 
     splash_tests(&services);
     no_esp32(&services);
+    board_read(master, got, sizeof got);
     drawn(&services);
     plot_navigation_tests(&services);
     navigation_tests(&services, dir);
-    released = 0;
+    released = reclaimed = 0;
     st = started(&services);
     assert(frames >= 1 && menus_seen >= 1 && !strcmp(st->board, "c61"));
     assert(st->state == SDR_IDLE && st->note[0] == '\0');    /* nothing said */

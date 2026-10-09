@@ -24,17 +24,21 @@
 #define DRAIN_US      100000
 #define READ_MAX       32768
 
-/** @brief Whether @p text begins with ESP32-C61, ignoring case, dashes and
- *         underscores: "ESP32-C61" and "esp32c61" alike. */
+/** @brief Return the supported ESP32 receiver part (5 or 61), or zero. */
 static int receiver_part(const char *text)
 {
-    const char *want = "esp32c61";
+    const char *want = "esp32c";
+    int part;
 
     for (; *text && *want; text++) {
         if (*text == '-' || *text == '_') continue;
         if (tolower((unsigned char)*text) != *want++) return 0;
     }
-    return !*want;
+    if (*want) return 0;
+    if (*text == '5') { part = 5; text++; }
+    else if (text[0] == '6' && text[1] == '1') { part = 61; text += 2; }
+    else return 0;
+    return !*text || *text == '-' || *text == '_' || *text == ' ' ? part : 0;
 }
 
 /** @brief Whether @p board is one line of @p names. */
@@ -147,11 +151,16 @@ static void serial_open(sdr_t *st)
         cfmakeraw(&t);
         t.c_cflag |= CLOCAL | CREAD;
         t.c_cflag &= (tcflag_t)~CRTSCTS;
+        if (receiver_part(*st->mcu ? st->mcu : st->board) == 5)
+            t.c_cflag &= (tcflag_t)~HUPCL;
         t.c_cc[VMIN] = 0;
         t.c_cc[VTIME] = 0;
         cfsetispeed(&t, B115200);
         cfsetospeed(&t, B115200);
-        if (!tcsetattr(fd, TCSANOW, &t)) {
+        int controls = TIOCM_DTR | TIOCM_RTS;
+        if (!tcsetattr(fd, TCSANOW, &t) &&
+            (receiver_part(*st->mcu ? st->mcu : st->board) != 5 ||
+             !ioctl(fd, TIOCMBIS, &controls))) {
             st->fd = fd;
             st->rx_n = 0;
             st->state = SDR_OPENING;
@@ -291,7 +300,8 @@ int sdr_gain_request(sdr_t *st, int gain)
 static void take_line(sdr_t *st, const char *line)
 {
     if (st->state == SDR_RUNNING && st->caps_inflight) {
-        (void)sdr_caps_parse(st, line);
+        if (st->caps_inflight == 2) (void)sdr_bands_parse(st, line);
+        else (void)sdr_caps_parse(st, line);
         return;
     }
     if (st->state == SDR_RUNNING && st->gain_inflight) {
@@ -359,6 +369,12 @@ static void take_line(sdr_t *st, const char *line)
 static void take_prompt(sdr_t *st)
 {
     st->pending = 0;
+    if (st->caps_inflight == 1 && st->caps_known == 1 &&
+        receiver_part(*st->mcu ? st->mcu : st->board) == 5) {
+        st->caps_inflight = 2;
+        send_line(st, "sdr bands");
+        return;
+    }
     if (st->caps_inflight) {
         st->caps_inflight = 0;
         if (!st->caps_known) {

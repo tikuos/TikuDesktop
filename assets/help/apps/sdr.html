@@ -11,12 +11,13 @@ top bar, shows it again. The board does the listening and the arithmetic
 itself; TikuSDR draws what it sends, can record it to a file and play it
 back, and exports spectra for a spreadsheet or a script.</p>
 
-<p>It needs an ESP32-C61 whose firmware has the receiver built in
-(<code>TIKU_DRV_SDR_ESP_ENABLE=1</code> beside the Wi-Fi driver).</p>
+<p>It needs an ESP32-C5 or ESP32-C61 whose firmware has the receiver built
+in (<code>TIKU_DRV_SDR_ESP_ENABLE=1</code>). The C5 uses a separate SDR
+firmware profile; its BLE profile does not provide SDR captures.</p>
 
 <h2 id="connect">Connect</h2>
 
-<p>TikuSDR is opened once an ESP32-C61 is connected through the
+<p>Open TikuSDR once an ESP32-C5 or ESP32-C61 is connected through the
 desktop&#8217;s <b>Devices</b> menu, and it borrows the board as soon as
 it opens: the desktop lets go of it, TikuSDR opens its serial port, as
 TikuConsole does, and the board lends its receiver a block of memory and
@@ -26,8 +27,8 @@ its files and mount are away.</p>
 
 <p><b>Disconnect</b> in the <b>SDR</b> menu gives the board back without
 closing the window, to play a recording, and <b>Connect</b>, offered while
-an ESP32-C61 is connected, borrows it again. The board is chosen in the
-<b>Device</b> menu, from the ESP32-C61s the desktop has mounted; other
+an eligible receiver is connected, borrows it again. The board is chosen in the
+<b>Device</b> menu, from the ESP32-C5 and ESP32-C61 devices the desktop has mounted; other
 boards are not offered.</p>
 
 <p>Opened with none connected, TikuSDR says <b>No software-defined radio
@@ -61,8 +62,17 @@ typing Center or Span moves Start and Stop, the other of the two kept. A
 Start past the Stop, or a Stop below the Start, moves the other end with
 the span kept. A number may end in k, M or G, with or without Hz:
 <code>2.437G</code> is 2437&#160;MHz. Escape leaves a field as it was. The
-board tunes 2200 to 2700&#160;MHz, so a view is moved inside that, and is
-at least 1&#160;MHz wide.</p>
+view is at least 1&#160;MHz wide. Acquisition is limited to the tuning bands
+reported by the receiver: 2200 to 2700&#160;MHz on the C61, and 2400 to
+2500 plus 4900 to 5900&#160;MHz on the C5. A sweep cannot cross the gap
+between the C5 bands.</p>
+
+<p>On a C5, choose a 5&#160;GHz channel from <b>Tune</b>, or enter a center
+such as <code>5180</code> MHz. Recordings and named setups preserve the band.
+The occupancy charts still use 2.4&#160;GHz channel plans. C5 5&#160;GHz
+measurements are uncalibrated and may show substantial DC offset or clipping
+at high gain. Reduce receiver gain for such captures; displayed levels are
+not calibrated dBm.</p>
 
 <p>Up to 24&#160;MHz is one spectrum, all of it caught at once, at the
 narrowest sample rate that holds the view, 4, 8, 10, 20 or 40&#160;MS/s, so
