@@ -33,7 +33,11 @@ int tiku_bench_command_build(bench_t *st, const job_t *job, command_t *c)
         st->flash ? "--flash" : "--skip-build"};
     for (size_t i = 0; i < sizeof base / sizeof base[0]; i++) argument(c, base[i]);
     if (st->usb) { argument(c, "--console"); argument(c, "usb"); }
-    else {
+    if (st->usb && !strcmp(st->mcu, "esp32c5")) {
+        if (!*st->port) return 0;
+        argument(c, "--port"); argument(c, st->port);
+    }
+    if (!st->usb) {
         if (!*st->port || !*st->field[1].text) return 0;
         for (const char *p = st->field[1].text; *p; p++) if (!isdigit((unsigned char)*p)) return 0;
         long baud = strtol(st->field[1].text, NULL, 10);

@@ -264,7 +264,7 @@ static void cards(bench_t *st)
     in = tiku_ui_group(st->surface, TIKU_BENCH_CARD_HISTORY, "Kernel history");
     history_card(st, in);
     in = tiku_ui_group(st->surface, TIKU_BENCH_CARD_LINK, "Connection");
-    snprintf(line, sizeof line, "Port: %s", st->usb ? "the runner finds it" :
+    snprintf(line, sizeof line, "Port: %s", st->usb && strcmp(st->mcu, "esp32c5") ? "the runner finds it" :
              *st->port ? st->port : "none");
     tiku_bench_text(st, (tiku_rect_t){in.x, in.y, in.w, 16}, line, 0);
     tiku_bench_text(st, (tiku_rect_t){in.x, in.y + 20, 44, 22}, "Baud", 0);

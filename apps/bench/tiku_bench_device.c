@@ -22,6 +22,7 @@ void tiku_bench_profile_update(bench_t *st)
     st->supported = b != NULL;
     if (!b || !b->large) st->large = 0;
     if (!b || !b->usb) st->usb = 0;
+    if (b && !strcmp(b->key, "esp32c5")) st->usb = 1;
     snprintf(st->profile, sizeof st->profile, "%.55s%s", st->mcu,
              b && b->usb ? (st->usb ? "-usb" : "-uart") : "");
     tiku_bench_entries_build(st);
@@ -38,6 +39,8 @@ void tiku_bench_target_capture(bench_t *st)
     if (st->services->board_port)
         st->services->board_port(st->services->ctx, st->target_name, st->port, sizeof st->port);
     for (char *p = st->mcu; *p; p++) *p = (char)tolower((unsigned char)*p);
+    if (!strcmp(st->mcu, "esp32-c5")) snprintf(st->mcu, sizeof st->mcu, "esp32c5");
+    if (!strcmp(st->mcu, "esp32-c61")) snprintf(st->mcu, sizeof st->mcu, "esp32c61");
     tiku_bench_profile_update(st);
 }
 

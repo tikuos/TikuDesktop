@@ -130,6 +130,19 @@ static void model_test(bench_t *st)
     st->epanel.selected = 0; st->epattern.selected = 0;   /* as they start */
     assert(!arg_value(&c, "--port") && !arg_value(&c, "--baud"));
     assert(!strcmp(arg_value(&c, "--console"), "usb"));
+    char c5_metadata[] = "B\tesp32c5\tesp32c5\tesp32\t115200\t0\t1";
+    tiku_bench_metadata_line(st, c5_metadata);
+    board_mcu = "ESP32-C5";
+    st->usb = 0;
+    tiku_bench_target_capture(st);
+    assert(st->supported && st->usb && !strcmp(st->profile, "esp32c5-usb"));
+    assert(tiku_bench_command_build(st, &st->jobs[0], &c));
+    assert(!strcmp(arg_value(&c, "--port"), "/dev/fixture-only"));
+    assert(!strcmp(arg_value(&c, "--console"), "usb"));
+    st->port[0] = '\0';
+    assert(!tiku_bench_command_build(st, &st->jobs[0], &c));
+    board_mcu = "nRF54L15";
+    tiku_bench_target_capture(st);
     st->usb = st->flash = st->pk = st->epaper = 0;
     tiku_field_start(&st->field[2], "BAD"); assert(!tiku_bench_command_build(st, &st->jobs[0], &c));
     tiku_field_start(&st->field[2], "MEMORY_MODEL=large"); assert(!tiku_bench_command_build(st, &st->jobs[0], &c));
