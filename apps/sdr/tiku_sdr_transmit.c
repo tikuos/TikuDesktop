@@ -22,6 +22,33 @@ void sdr_tx_init(sdr_t *st)
 
 int sdr_tx_busy(const sdr_t *st) { return st->tx.phase || st->tx.queued; }
 
+int sdr_tx_frequency(const sdr_t *st, unsigned mhz)
+{
+    if (st->tx.known != 1) { return 0; }
+    for (unsigned n = 0; n < st->tx.band_count; n++) {
+        const sdr_tx_band_t *b = &st->tx.bands[n];
+        if (mhz >= b->low && mhz <= b->high && b->step &&
+            (mhz - b->low) % b->step == 0) { return 1; }
+    }
+    return 0;
+}
+
+void sdr_tx_next_band(sdr_t *st)
+{
+    unsigned next = 0;
+    if (st->tx.known != 1 || st->tx.band_count < 2 || sdr_tx_busy(st)) { return; }
+    for (unsigned n = 0; n < st->tx.band_count; n++) {
+        if ((unsigned)st->tx.mhz >= st->tx.bands[n].low &&
+            (unsigned)st->tx.mhz <= st->tx.bands[n].high) {
+            next = (n + 1) % st->tx.band_count; break;
+        }
+    }
+    st->tx.mhz = (int)st->tx.bands[next].low;
+    snprintf(st->note, sizeof st->note, "TX centers: %u-%u MHz, step %u MHz; playback 80 MS/s.",
+             st->tx.bands[next].low, st->tx.bands[next].high, st->tx.bands[next].step);
+    st->dirty = 1;
+}
+
 void sdr_tx_dispose(sdr_t *st)
 {
     free(st->tx.samples);
@@ -85,8 +112,8 @@ int sdr_tx_request(sdr_t *st)
     if (st->state != SDR_RUNNING || t->known != 1 || sdr_tx_busy(st) ||
         st->caps_queued || st->caps_inflight || st->gain_queued || st->gain_inflight ||
         st->rec.file || st->play.file || st->trigger.armed || st->trigger.fired ||
-        st->asking || t->mhz < (int)t->low || t->mhz > (int)t->high || !t->step ||
-        ((unsigned)t->mhz - t->low) % t->step || t->ms < 1 || t->ms > (int)t->max_ms ||
+        st->asking || !sdr_tx_frequency(st, (unsigned)t->mhz) ||
+        t->ms < 1 || t->ms > (int)t->max_ms ||
         t->cycles < -128 || t->cycles > 128 || t->amplitude < 1 || t->amplitude > 128 ||
         (t->samples && (!t->words || t->words > t->maximum || t->words % t->alignment))) {
         return 0;
@@ -138,6 +165,40 @@ static void tx_send(sdr_t *st)
     tx_issue(st, TX_SEND, line);
 }
 
+/** @brief Validate an ordered band extension matching the legacy base range. */
+static int tx_bands(sdr_transmit_t *t, const char *line)
+{
+    unsigned values[11], count = 0;
+    const char *p = line + 8;
+    sdr_tx_band_t bands[3];
+    while (*p) {
+        unsigned value = 0;
+        if (count == 11 || *p < '0' || *p > '9') { return 0; }
+        do {
+            value = value * 10 + (unsigned)(*p++ - '0');
+            if (value > 5900) { return 0; }
+        } while (*p >= '0' && *p <= '9');
+        values[count++] = value;
+        if (*p && (*p++ != ' ' || !*p)) { return 0; }
+    }
+    if (count < 5 || values[0] != 1 || !values[1] || values[1] > 3 ||
+        count != 2 + values[1] * 3) { return 0; }
+    for (unsigned n = 0; n < values[1]; n++) {
+        sdr_tx_band_t *b = &bands[n];
+        *b = (sdr_tx_band_t){values[2 + n * 3], values[3 + n * 3], values[4 + n * 3]};
+        if (!b->step || b->step > 100 || b->low > b->high ||
+            (b->high - b->low) % b->step ||
+            !((b->low >= 2400 && b->high <= 2500) ||
+              (b->low >= 4900 && b->high <= 5900)) ||
+            (n && b->low <= bands[n - 1].high)) { return 0; }
+    }
+    if (bands[0].low != t->bands[0].low || bands[0].high != t->bands[0].high ||
+        bands[0].step != t->bands[0].step) { return 0; }
+    memcpy(t->bands, bands, values[1] * sizeof *bands);
+    t->band_count = values[1];
+    return 1;
+}
+
 void sdr_tx_line(sdr_t *st, const char *line)
 {
     sdr_transmit_t *t = &st->tx;
@@ -145,16 +206,22 @@ void sdr_tx_line(sdr_t *st, const char *line)
     unsigned written, total, elapsed, words;
     int used = 0, rc;
     if (t->phase == TX_CAPS) {
+        if (!strncmp(line, "TXBANDS", 7)) {
+            if (strncmp(line, "TXBANDS ", 8) || t->bands_seen++ || !t->answered ||
+                !tx_bands(t, line)) { t->failed = 1; }
+            return;
+        }
         if (sscanf(line, "TXCAP %u %u %u %u %u %u %u %u %u%n", &version, &hz,
                    &maximum, &alignment, &ms, &low, &high, &step, &chunk, &used) == 9 &&
             !line[used] && version == 1 && hz == 80000000 && maximum >= 1024 &&
             maximum <= TX_FILE_MAX && alignment == 256 && maximum % alignment == 0 &&
             ms >= 1 && ms <= 1000 && low >= 2400 && high <= 2500 && low < high &&
-            step == 5 && chunk >= 1 && chunk <= 8) {
+            step == 5 && (high - low) % step == 0 && chunk >= 1 && chunk <= 8 && !t->answered) {
             t->known = t->answered = 1; t->hz = hz; t->maximum = maximum;
             t->alignment = alignment; t->max_ms = ms;
-            t->low = low; t->high = high; t->step = step; t->chunk = chunk;
-        }
+            t->bands[0] = (sdr_tx_band_t){low, high, step};
+            t->band_count = 1; t->chunk = chunk;
+        } else if (!strncmp(line, "TXCAP", 5)) { t->failed = 1; }
     } else if (t->phase == TX_STOP) {
         if (!strcmp(line, "SDR stopped")) { t->answered = 1; }
     } else if (t->phase == TX_LOAD || t->phase == TX_PUT) {
@@ -188,7 +255,10 @@ void sdr_tx_prompt(sdr_t *st)
     char line[64];
     int phase = t->phase;
     if (phase == TX_CAPS) {
-        if (!t->answered) { t->known = -1; }
+        if (!t->answered || t->failed) { t->known = -1; t->band_count = 0; }
+        if (t->known == 1 && !sdr_tx_frequency(st, (unsigned)t->mhz)) {
+            t->mhz = (int)t->bands[0].low;
+        }
         t->phase = 0;
         snprintf(st->note, sizeof st->note, t->known == 1 ?
                  "TX available: 80 MS/s, preloaded IQ10, bursts up to 1000 ms. Power is uncalibrated." :
@@ -233,6 +303,7 @@ int sdr_tx_tick(sdr_t *st)
             if (st->closing) { sdr_disconnect(st); }
         } else if (request == 1) {
             st->tx.known = 0;
+            st->tx.failed = 0; st->tx.band_count = st->tx.bands_seen = 0;
             tx_issue(st, TX_CAPS, "sdr tx info");
         } else { tx_issue(st, TX_STOP, "sdr stop"); }
     }

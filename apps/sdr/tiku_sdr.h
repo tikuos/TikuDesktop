@@ -117,7 +117,7 @@ enum {
     CMD_TRIGGER, CMD_CAPS, CMD_FFT, CMD_RATE, CMD_BOOK_ADD, CMD_BOOK_NEXT,
     CMD_BOOK_CLEAR, CMD_LOOP_A, CMD_LOOP_B, CMD_LOOP, CMD_OCC_PAGE, CMD_HEALTH,
     CMD_RBW,
-    CMD_TX_CAPS = 560, CMD_TX_SEND, CMD_TX_LOAD, CMD_TX_TONE,
+    CMD_TX_CAPS = 560, CMD_TX_SEND, CMD_TX_LOAD, CMD_TX_TONE, CMD_TX_BAND,
     CMD_TUNE5 = 1000                /* + MHz offset from 5000 */
 };
 
@@ -264,11 +264,18 @@ typedef struct {
     unsigned frames;                /* spectra written                 */
 } sdr_csv_t;
 
+/** @brief Inclusive carrier-center range and its step in MHz. */
+typedef struct {
+    unsigned low, high, step;
+} sdr_tx_band_t;
+
 /** @brief Local waveform settings and the acknowledged TX command sequence. */
 typedef struct {
     int known, queued, phase, answered, failed, cancel;
     int mhz, cycles, amplitude, ms;
-    unsigned hz, maximum, alignment, max_ms, low, high, step, chunk;
+    unsigned hz, maximum, alignment, max_ms, chunk;
+    unsigned band_count, bands_seen;
+    sdr_tx_band_t bands[3];
     uint32_t *samples;
     unsigned words, offset, sent;
     char path[SDR_PATH];
@@ -363,6 +370,10 @@ int sdr_tx_file(sdr_t *st, const char *path);
 void sdr_tx_dispose(sdr_t *st);
 /** @brief Whether TX owns the command sequence or a burst is queued. */
 int sdr_tx_busy(const sdr_t *st);
+/** @brief Whether the reported TX bands contain the requested carrier center. */
+int sdr_tx_frequency(const sdr_t *st, unsigned mhz);
+/** @brief Select the next reported TX band and its first carrier center. */
+void sdr_tx_next_band(sdr_t *st);
 /** @brief Queue one burst after capabilities and settings have been checked. */
 int sdr_tx_request(sdr_t *st);
 /** @brief Request cancellation; an active firmware burst remains time-bounded. */

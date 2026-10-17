@@ -1419,12 +1419,59 @@ static void transmit_tests(sdr_t *st, int master, int64_t *now, const char *dir)
         assert(st->tx.known == (n == 3 ? 1 : -1));
     }
     assert(!st->pending && !sdr_tx_busy(st) && sdr_enabled(st, CMD_TX_SEND));
+    st->tx.mhz = 5180;
+    assert(!sdr_tx_request(st));
+    st->tx.mhz = 2437;
+    st->tx.queued = 1; ticks(st, now, 1); board_read(master, got, sizeof got);
+    say(master, "TXCAP 1 80000000 16128 256 1000 2412 2462 5 8\r\n"
+                "TXBANDS 1 3 2412 2462 5 5180 5240 20 5745 5825 20" PROMPT);
+    ticks(st, now, 1);
+    st->tx.mhz = 5180;
+    assert(sdr_tx_request(st));
+    st->tx.queued = 0;
+    st->tx.mhz = 2437;
+    assert(st->tx.band_count == 3 && sdr_enabled(st, CMD_TX_BAND));
+    {
+        const char *bad_bands[] = {
+            "TXBANDS 2 1 2412 2462 5", "TXBANDS 1 0", "TXBANDS 1 4 2412 2462 5",
+            "TXBANDS 1 2 2412 2462 5 5180 5240", "TXBANDS 1 1 2412 2462 5 trailing",
+            "TXBANDS 1 1 2412 2462 0", "TXBANDS 1 1 2400 2500 5",
+            "TXBANDS 1 2 2412 2462 5 2440 2480 20",
+            "TXBANDS 1 2 2412 2462 5 2500 5180 20",
+            "TXBANDS 1 2 2412 2462 5 5180 5241 20",
+            "TXBANDS 1 2 2412 2462 5 -5180 5240 20",
+            "TXBANDS 1 2 2412 2462 5 4294972476 5240 20"
+        };
+        sdr_t *probe = malloc(sizeof *probe); assert(probe);
+        for (unsigned n = 0; n < sizeof bad_bands / sizeof *bad_bands; n++) {
+            *probe = *st; probe->tx.phase = TX_CAPS;
+            probe->tx.answered = probe->tx.failed = probe->tx.bands_seen = 0;
+            sdr_tx_line(probe, caps[3]); sdr_tx_line(probe, bad_bands[n]);
+            sdr_tx_prompt(probe);
+            assert(probe->tx.known == -1 && !sdr_tx_request(probe));
+        }
+        *probe = *st; probe->tx.phase = TX_CAPS;
+        probe->tx.answered = probe->tx.failed = probe->tx.bands_seen = 0;
+        sdr_tx_line(probe, caps[3]);
+        sdr_tx_line(probe, "TXBANDS 1 1 2412 2462 5"); sdr_tx_prompt(probe);
+        assert(probe->tx.known == 1 && !sdr_tx_frequency(probe, 5180) &&
+               !sdr_enabled(probe, CMD_TX_BAND));
+        free(probe);
+    }
     {
         unsigned collapsed = st->collapsed;
         st->collapsed = ((1u << SDR_SECTIONS) - 1u) & ~(1u << SDR_S_TX);
         sdr_controls(st); sdr_paint(st);
         assert(sdr_control_rect(st, CMD_TX_SEND).h > 0);
         assert(tiku_surface_png(st->surface, "build/tests/test_sdr_transmit.png") == 0);
+        assert(tiku_sdr_app.pick(st, st->id, CMD_TX_BAND) == 0 && st->tx.mhz == 5180);
+        type_field(st, SDR_F_TX_FREQ, "5220"); assert(st->tx.mhz == 5220);
+        type_field(st, SDR_F_TX_FREQ, "5181"); assert(st->tx.mhz == 5220);
+        assert(tiku_sdr_app.pick(st, st->id, CMD_TX_BAND) == 0 && st->tx.mhz == 5745);
+        sdr_controls(st); sdr_paint(st);
+        assert(tiku_surface_png(st->surface, "build/tests/test_sdr_transmit_5ghz.png") == 0);
+        assert(tiku_sdr_app.pick(st, st->id, CMD_TX_BAND) == 0 && st->tx.mhz == 2412);
+        st->tx.mhz = 2437;
         st->collapsed = collapsed;
     }
     st->trigger.armed = 1; assert(!sdr_tx_request(st)); st->trigger.armed = 0;
@@ -1506,6 +1553,19 @@ static void transmit_tests(sdr_t *st, int master, int64_t *now, const char *dir)
     }
     assert(!sdr_tx_file(st, NULL) && !st->tx.samples);
     assert(!unlink(path));
+    st->tx.mhz = 5825;
+    assert(sdr_tx_request(st)); ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr stop\r"));
+    say(master, "SDR stopped" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr tx tone 16 64\r"));
+    say(master, "TX load 1024 1024" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr tx send 5825 100\r"));
+    say(master, "TX active 5825 80000000 1024 100\r\nTX done 0 100000 80000000 1024" PROMPT);
+    ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr tx clear\r"));
+    say(master, "TX cleared" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    say(master, "SDR ready" PROMPT); ticks(st, now, 1);
+    assert(!sdr_tx_busy(st) && !st->tx.failed);
     st->paused = 0; ticks(st, now, 1); board_read(master, got, sizeof got);
     assert(!strncmp(got, "sdr spec ", 9));
 }

@@ -333,8 +333,8 @@ static void field_apply(sdr_t *st, int i)
         v = strtod(st->field[i].text, &end);
         int valid = end != st->field[i].text && !*end && isfinite(v) && !sdr_tx_busy(st);
         if (i == SDR_F_TX_FREQ) {
-            valid = valid && floor(v) == v && v >= st->tx.low && v <= st->tx.high &&
-                    st->tx.step && ((unsigned)v - st->tx.low) % st->tx.step == 0;
+            valid = valid && floor(v) == v && v >= 0 && v <= 5900 &&
+                    sdr_tx_frequency(st, (unsigned)v);
             if (valid) st->tx.mhz = (int)v;
         } else if (i == SDR_F_TX_OFFSET) {
             double cycles = v / 78.125;
@@ -555,6 +555,7 @@ static int sdr_pick(void *state, uint32_t window, int command)
     else if (command == CMD_TX_SEND) { (void)sdr_tx_request(st); }
     else if (command == CMD_TX_LOAD) { ask(st, command); }
     else if (command == CMD_TX_TONE) { (void)sdr_tx_file(st, NULL); }
+    else if (command == CMD_TX_BAND) { sdr_tx_next_band(st); }
     else if (command >= CMD_PRESET_SAVE && command <= CMD_RBW) {
         if (command == CMD_PRESET_SAVE || command == CMD_PRESET_OPEN ||
             command == CMD_REF_SAVE || command == CMD_REF_OPEN || command == CMD_OCC_EXPORT)

@@ -52,17 +52,17 @@ static const char *const type_short[SDR_T_TYPES] = {
 enum { S_FREQ, S_TRACE, S_MARK, S_SHOW, S_RECEIVER, S_MEASURE, S_TX, SECTIONS };
 static const struct { const char *name; int rows; } section[SECTIONS] = {
     {"Frequency", 5}, {"Traces", 4}, {"Markers", 7}, {"Display", 7},
-    {"Receiver", 6}, {"Measurements", 8}, {"Transmission", 8}
+    {"Receiver", 6}, {"Measurements", 8}, {"Transmission", 9}
 };
 /* Each row's name, by section, "" for none. */
-static const char *const row_name[SECTIONS][8] = {
+static const char *const row_name[SECTIONS][9] = {
     {"Center", "Span", "Start", "Stop", "", "", ""},
     {"Trace", "Type", "Avg count", "", "", "", ""},
     {"Marker", "On trace", "", "Freq", "", "", ""},
     {"", "", "Ref", "dB/div", "", "Floor", "Ceiling", ""},
     {"", "Index", "", "", "", ""},
     {"", "", "Threshold", "Pre (s)", "Post (s)", "", "Bookmark", ""},
-    {"RF MHz", "Offset kHz", "Amplitude", "Time ms", "", "", "", ""}
+    {"", "RF MHz", "Offset kHz", "Amplitude", "Time ms", "", "", "", ""}
 };
 
 /** @brief Section @p s's bar's top. */
@@ -165,14 +165,15 @@ tiku_rect_t sdr_control_rect(const sdr_t *st, int id)
     case CMD_FIELD + SDR_F_BOOK: return row_at(st, S_MEASURE, 6, x, w);
     case CMD_BOOK_ADD: return button_at(st, S_MEASURE, 7, 0, 2);
     case CMD_BOOK_NEXT: return button_at(st, S_MEASURE, 7, 1, 2);
-    case CMD_FIELD + SDR_F_TX_FREQ: return row_at(st, S_TX, 0, x, w);
-    case CMD_FIELD + SDR_F_TX_OFFSET: return row_at(st, S_TX, 1, x, w);
-    case CMD_FIELD + SDR_F_TX_AMP: return row_at(st, S_TX, 2, x, w);
-    case CMD_FIELD + SDR_F_TX_MS: return row_at(st, S_TX, 3, x, w);
-    case CMD_TX_LOAD: return button_at(st, S_TX, 4, 0, 1);
-    case CMD_TX_TONE: return button_at(st, S_TX, 5, 0, 1);
-    case CMD_TX_SEND: return button_at(st, S_TX, 6, 0, 1);
-    case CMD_TX_CAPS: return button_at(st, S_TX, 7, 0, 1);
+    case CMD_TX_BAND: return button_at(st, S_TX, 0, 0, 1);
+    case CMD_FIELD + SDR_F_TX_FREQ: return row_at(st, S_TX, 1, x, w);
+    case CMD_FIELD + SDR_F_TX_OFFSET: return row_at(st, S_TX, 2, x, w);
+    case CMD_FIELD + SDR_F_TX_AMP: return row_at(st, S_TX, 3, x, w);
+    case CMD_FIELD + SDR_F_TX_MS: return row_at(st, S_TX, 4, x, w);
+    case CMD_TX_LOAD: return button_at(st, S_TX, 5, 0, 1);
+    case CMD_TX_TONE: return button_at(st, S_TX, 6, 0, 1);
+    case CMD_TX_SEND: return button_at(st, S_TX, 7, 0, 1);
+    case CMD_TX_CAPS: return button_at(st, S_TX, 8, 0, 1);
     case CMD_RECORD: return (tiku_rect_t){PANEL_X, bar, 70, CTL_H};
     case CMD_PAUSE:  return (tiku_rect_t){PANEL_X + 74, bar, 66, CTL_H};
     case CMD_CONNECT: return (tiku_rect_t){PANEL_X + 144, bar, 88, CTL_H};
@@ -207,6 +208,8 @@ void sdr_layout(const sdr_t *st, tiku_rect_t *plot, tiku_rect_t *fall)
 const char *sdr_label(const sdr_t *st, int command)
 {
     switch (command) {
+    case CMD_TX_BAND: return st->tx.mhz >= 5700 ? "TX band: 5 GHz high" :
+                             st->tx.mhz >= 4900 ? "TX band: 5 GHz low" : "TX band: 2.4 GHz";
     case CMD_TX_CAPS: return st->tx.known == 1 ? "TX: 80 MS/s (Read)" :
                              st->tx.known < 0 ? "TX unavailable (Read)" : "Read TX capabilities";
     case CMD_TX_SEND: return "Transmit burst";
@@ -297,9 +300,10 @@ int sdr_enabled(const sdr_t *st, int command)
     if (command == CMD_TX_CAPS)
         return st->state == SDR_RUNNING && st->tx.known != -2 && !st->caps_queued && !st->caps_inflight &&
                !st->gain_queued && !st->gain_inflight;
-    if ((command >= CMD_TX_SEND && command <= CMD_TX_TONE) ||
+    if ((command >= CMD_TX_SEND && command <= CMD_TX_BAND) ||
         (command >= CMD_FIELD + SDR_F_TX_FREQ && command <= CMD_FIELD + SDR_F_TX_MS)) {
         if (st->state != SDR_RUNNING || st->tx.known != 1 || st->asking) return 0;
+        if (command == CMD_TX_BAND) return st->tx.band_count > 1;
         if (command == CMD_TX_SEND)
             return !st->rec.file && !st->play.file && !st->trigger.armed && !st->trigger.fired &&
                    !st->caps_queued && !st->caps_inflight && !st->gain_queued && !st->gain_inflight;
@@ -471,6 +475,7 @@ void sdr_controls(sdr_t *st)
         {CMD_FIELD + SDR_F_TX_OFFSET, TIKU_DIALOG_INPUT},
         {CMD_FIELD + SDR_F_TX_AMP, TIKU_DIALOG_INPUT},
         {CMD_FIELD + SDR_F_TX_MS, TIKU_DIALOG_INPUT},
+        {CMD_TX_BAND, TIKU_DIALOG_BUTTON},
         {CMD_TX_CAPS, TIKU_DIALOG_BUTTON}, {CMD_TX_LOAD, TIKU_DIALOG_BUTTON},
         {CMD_TX_TONE, TIKU_DIALOG_BUTTON}, {CMD_TX_SEND, TIKU_DIALOG_BUTTON}
     };

@@ -274,8 +274,11 @@ can be recovered from the saved spectra.</p>
 
 <p>Open the <b>Transmission</b> section to read the board's TX capabilities.
 It requires ESP32-C5 or ESP32-C61 firmware with the SDR TX option.
-Receiver-only and older firmware leave transmission disabled. Choose an RF centre from
-2412 to 2462 MHz in 5 MHz steps, and a burst of 1 to 1000 ms.</p>
+Firmware without supported TX capabilities leaves transmission disabled.
+Choose a <b>TX band</b>, an RF centre and a burst of 1 to 1000 ms.
+The C5 offers 2412 to 2462 MHz in 5 MHz steps, 5180 to 5240 MHz in 20 MHz
+steps, and 5745 to 5825 MHz in 20 MHz steps. The band button cycles these
+ranges. C61 and legacy TX firmware offer the 2.4 GHz grid.</p>
 
 <p>A generated tone uses an offset in 78.125 kHz steps from -10000 to
 10000 kHz and an amplitude sample code from 1 to 128. Playback is 80 MS/s;
@@ -295,7 +298,7 @@ is not confirmed, reset the board before another radio session.</p>
 
 <p>The waveform repeats from SRAM. Vendor PHY preparation can emit RF
 before timed playback and has no software timeout. Continuous streaming,
-scheduled transmission and 5 GHz TX are not implemented.</p>
+scheduled transmission are not implemented.</p>
 
 <h2 id="keys">Keys</h2>
 

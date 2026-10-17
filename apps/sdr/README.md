@@ -5,7 +5,11 @@ C5 firmware needs `TIKU_DRV_SDR_ESP_TX_ENABLE=1` with its SDR receiver profile.
 The C61 and older firmware keep the TX controls disabled. Opening a panel,
 loading a file, reconnecting, or restoring preferences does not transmit.
 
-Choose a 2412–2462 MHz channel centre in 5 MHz steps and a 1–1000 ms burst.
+Choose a reported **TX band**, an RF channel centre and a 1–1000 ms burst.
+C5 supports 2412–2462 MHz in 5 MHz steps, 5180–5240 MHz in 20 MHz steps and
+5745–5825 MHz in 20 MHz steps. The band button cycles these ranges and sets
+the first channel centre. The RF field accepts channel centres on the selected
+firmware's grids. C61 and legacy TX firmware offer the 2.4 GHz grid.
 The generated tone has a signed offset in 78.125 kHz steps, from -10 to
 +10 MHz, and an amplitude code from 1 to 128. The native IQ rate is 80 MS/s;
 amplitude is not RF power in dBm. **Load IQ file** accepts 256–16128 complex
@@ -25,7 +29,7 @@ cannot be confirmed, reset the board before another radio session.
 
 Vendor PHY preparation can emit RF before the timed playback interval and
 has no software timeout. Playback repeats preloaded SRAM; continuous host
-streaming, timed scheduling and 5 GHz transmission are not implemented.
+streaming and timed scheduling are not implemented.
 TX settings and waveform selection are local to the window and are not
 saved in receiver presets or restored as transmission requests.
 
