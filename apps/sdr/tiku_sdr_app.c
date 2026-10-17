@@ -329,6 +329,29 @@ static void field_apply(sdr_t *st, int i)
 
     sdr_field_text(st, i, now, sizeof now);
     if (!strcmp(st->field[i].text, now)) return;
+    if (i >= SDR_F_TX_FREQ && i <= SDR_F_TX_MS) {
+        v = strtod(st->field[i].text, &end);
+        int valid = end != st->field[i].text && !*end && isfinite(v) && !sdr_tx_busy(st);
+        if (i == SDR_F_TX_FREQ) {
+            valid = valid && floor(v) == v && v >= st->tx.low && v <= st->tx.high &&
+                    st->tx.step && ((unsigned)v - st->tx.low) % st->tx.step == 0;
+            if (valid) st->tx.mhz = (int)v;
+        } else if (i == SDR_F_TX_OFFSET) {
+            double cycles = v / 78.125;
+            valid = valid && fabs(cycles - round(cycles)) < 1e-6 && cycles >= -128 && cycles <= 128;
+            if (valid) st->tx.cycles = (int)lround(cycles);
+        } else if (i == SDR_F_TX_AMP) {
+            valid = valid && floor(v) == v && v >= 1 && v <= 128;
+            if (valid) st->tx.amplitude = (int)v;
+        } else {
+            valid = valid && floor(v) == v && v >= 1 && v <= st->tx.max_ms;
+            if (valid) st->tx.ms = (int)v;
+        }
+        if (!valid) snprintf(st->note, sizeof st->note,
+             "TX uses reported RF channels, offset steps of 78.125 kHz, amplitude 1..128, and bursts of 1..1000 ms.");
+        field_open(st, i); st->dirty = 1;
+        return;
+    }
     if (i == SDR_F_BOOK) {
         snprintf(st->book_label, sizeof st->book_label, "%.63s", st->field[i].text);
         st->dirty = 1;
@@ -430,7 +453,7 @@ static void ask(sdr_t *st, int command)
         return;
     }
     st->asking = command;
-    if (command == CMD_REPLAY || command == CMD_PRESET_OPEN || command == CMD_REF_OPEN) {
+    if (command == CMD_REPLAY || command == CMD_PRESET_OPEN || command == CMD_REF_OPEN || command == CMD_TX_LOAD) {
         put = sv->pick(sv->ctx, st->id, TIKU_APP_PICK_LOCAL_OPEN, start, NULL);
     } else {
         sdr_tape_name(st, command == CMD_PRESET_SAVE ? ".sdrpreset" :
@@ -528,7 +551,11 @@ static int sdr_pick(void *state, uint32_t window, int command)
     if (command == CMD_QUIT) return 1;
     if (st->alert.open) return 0;       /* the alert is answered first */
     if (command != CMD_CONNECT && !sdr_enabled(st, command)) return 0;
-    if (command >= CMD_PRESET_SAVE && command <= CMD_RBW) {
+    if (command == CMD_TX_CAPS) { st->tx.queued = 1; st->tx.cancel = 0; }
+    else if (command == CMD_TX_SEND) { (void)sdr_tx_request(st); }
+    else if (command == CMD_TX_LOAD) { ask(st, command); }
+    else if (command == CMD_TX_TONE) { (void)sdr_tx_file(st, NULL); }
+    else if (command >= CMD_PRESET_SAVE && command <= CMD_RBW) {
         if (command == CMD_PRESET_SAVE || command == CMD_PRESET_OPEN ||
             command == CMD_REF_SAVE || command == CMD_REF_OPEN || command == CMD_OCC_EXPORT)
             ask(st, command);
@@ -578,6 +605,8 @@ static int sdr_pick(void *state, uint32_t window, int command)
         return 0;
     } else if (command >= CMD_SECTION && command < CMD_SECTION + SDR_SECTIONS) {
         sdr_section_toggle(st, command - CMD_SECTION);
+        if (command == CMD_SECTION + SDR_S_TX && !(st->collapsed & (1u << SDR_S_TX)) &&
+            sdr_enabled(st, CMD_TX_CAPS) && !st->tx.known) st->tx.queued = 1;
         if (command == CMD_SECTION + SDR_S_RECEIVER &&
             !(st->collapsed & (1u << SDR_S_RECEIVER)))
             (void)sdr_gain_request(st, -2);
@@ -1098,7 +1127,8 @@ static void sdr_picked(void *state, uint32_t window, const char *path)
     snprintf(st->tape_dir, sizeof st->tape_dir, "%s", path);
     slash = strrchr(st->tape_dir, '/');
     if (slash) slash[slash == st->tape_dir] = '\0';
-    if (asked == CMD_PRESET_SAVE) (void)sdr_setup_save(st, path);
+    if (asked == CMD_TX_LOAD) (void)sdr_tx_file(st, path);
+    else if (asked == CMD_PRESET_SAVE) (void)sdr_setup_save(st, path);
     else if (asked == CMD_PRESET_OPEN) (void)sdr_setup_load(st, path);
     else if (asked == CMD_REF_SAVE) (void)sdr_reference_save(st, path);
     else if (asked == CMD_REF_OPEN) (void)sdr_reference_load(st, path);
@@ -1187,9 +1217,10 @@ static int sdr_start(void **state, const tiku_app_services_t *services)
     st->fall_on = 1;
     st->fall_percent = 36;
     st->collapsed = (1u << SDR_S_MARK) | (1u << SDR_S_DISPLAY) |
-                    (1u << SDR_S_RECEIVER) | (1u << SDR_S_MEASURE);
+                    (1u << SDR_S_RECEIVER) | (1u << SDR_S_MEASURE) | (1u << SDR_S_TX);
     sdr_model_init(&st->model);
     sdr_tools_init(st);
+    sdr_tx_init(st);
     sdr_preferences(st, 0);
     st->live_view[0] = st->model.start;    /* it opens live */
     st->live_view[1] = st->model.stop;
@@ -1225,6 +1256,7 @@ static void sdr_stop(void *state)
     sdr_play_stop(st);
     sdr_csv_stop(st);
     sdr_disconnect_now(st);
+    sdr_tx_dispose(st);
     tiku_surface_free(st->surface);
     tiku_surface_free(st->splash);
     tiku_surface_free(st->about);

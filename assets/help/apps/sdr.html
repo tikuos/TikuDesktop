@@ -270,6 +270,32 @@ They are disabled while a recording is displayed. Use the recording's
 timeline and history inspection instead; no additional frequency detail
 can be recovered from the saved spectra.</p>
 
+<h2 id="transmit">Transmission</h2>
+
+<p>Open the <b>Transmission</b> section to read the board's TX capabilities.
+It requires C5 firmware with the SDR TX option. C61 receiver firmware and
+older firmware leave transmission disabled. Choose an RF centre from
+2412 to 2462 MHz in 5 MHz steps, and a burst of 1 to 1000 ms.</p>
+
+<p>A generated tone uses an offset in 78.125 kHz steps from -10000 to
+10000 kHz and an amplitude sample code from 1 to 128. Playback is 80 MS/s;
+the amplitude is uncalibrated and is not power in dBm. <b>Load IQ file</b>
+selects 256 to 16128 complex samples, in multiples of 256. A file contains
+little-endian 32-bit words: signed two's complement I in bits 9:0, Q in
+bits 19:10, and zero in the upper twelve bits. Loading validates the file
+locally. <b>Use generated tone</b> selects the tone again.</p>
+
+<p><b>Transmit burst</b> stops RX, uploads the waveform with acknowledgments,
+plays one bounded burst, clears TX memory and resumes RX. Recording, replay
+and armed triggers disable this action. Opening this section, loading a
+file, reconnecting and restoring a preset do not transmit. Disconnect
+cancels an upload; an active burst finishes before cleanup. If cleanup
+is not confirmed, reset the board before another radio session.</p>
+
+<p>The waveform repeats from SRAM. Vendor PHY preparation can emit RF
+before timed playback and has no software timeout. Continuous streaming,
+scheduled transmission and 5 GHz TX are not implemented.</p>
+
 <h2 id="keys">Keys</h2>
 
 <p><b>Space</b> pauses and resumes; <b>L</b> presses Live; the arrow keys

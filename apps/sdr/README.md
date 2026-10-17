@@ -1,5 +1,34 @@
 # TikuSDR
 
+The **Transmission** panel queries `sdr tx info` before enabling TX controls.
+C5 firmware needs `TIKU_DRV_SDR_ESP_TX_ENABLE=1` with its SDR receiver profile.
+The C61 and older firmware keep the TX controls disabled. Opening a panel,
+loading a file, reconnecting, or restoring preferences does not transmit.
+
+Choose a 2412–2462 MHz channel centre in 5 MHz steps and a 1–1000 ms burst.
+The generated tone has a signed offset in 78.125 kHz steps, from -10 to
++10 MHz, and an amplitude code from 1 to 128. The native IQ rate is 80 MS/s;
+amplitude is not RF power in dBm. **Load IQ file** accepts 256–16128 complex
+samples in multiples of 256. Each little-endian 32-bit word contains signed
+I10 in bits 9:0 and Q10 in bits 19:10, with the upper twelve bits zero.
+The complete file is validated locally before it replaces the selected data.
+**Use generated tone** selects the tone again.
+
+**Transmit burst** stops RX, loads the waveform, sends one burst, clears the
+TX reservation and restarts RX. Commands advance after matching replies and
+prompts; a missing upload acknowledgment prevents transmission. Recording,
+replay and armed triggers disable transmission. Disconnect cancels further
+upload steps and waits for an active bounded burst to finish before clearing
+TX. A lost link leaves the firmware's burst timer responsible for stopping
+RF. Closing the app queues cleanup before returning the port. If cleanup
+cannot be confirmed, reset the board before another radio session.
+
+Vendor PHY preparation can emit RF before the timed playback interval and
+has no software timeout. Playback repeats preloaded SRAM; continuous host
+streaming, timed scheduling and 5 GHz transmission are not implemented.
+TX settings and waveform selection are local to the window and are not
+saved in receiver presets or restored as transmission requests.
+
 A board's radio receiver as a spectrum analyser. The ESP32-C5 or ESP32-C61
 board needs receiver firmware (`TIKU_DRV_SDR_ESP_ENABLE=1`). It captures raw
 I/Q, computes each spectrum itself and sends one line per spectrum;
@@ -79,6 +108,7 @@ spectrogram and the spectrum, with their annotations, as a PNG.
 | `tiku_sdr_model.c` | A view's range and how it is asked for, SPEC lines in, sweeps stitched, what each trace type keeps, the graticule's scale, the spectrogram |
 | `tiku_sdr_marker.c` | Peaks found, markers put on them, moved, kept on a drifting peak, read out |
 | `tiku_sdr_link.c` | The board borrowed, spoken to from the tick, given back |
+| `tiku_sdr_transmit.c` | TX capabilities, local IQ files, sequential upload, bounded burst and RX restart |
 | `tiku_sdr_tape.c` | Recordings written, played back, and exported as CSV |
 | `tiku_sdr_view.c` | The panel and its sections, the spectrogram, the graticule and its annotations, the bar, the picture |
 | `tiku_sdr_app.c` | The descriptor, menus, file panels, the panel's lists and fields, keys and pointer |

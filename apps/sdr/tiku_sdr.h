@@ -64,10 +64,11 @@
 enum { SDR_F_CENTER, SDR_F_SPAN, SDR_F_START, SDR_F_STOP, SDR_F_AVG,
        SDR_F_MARK, SDR_F_REF, SDR_F_DIV, SDR_F_FLOOR, SDR_F_CEILING,
        SDR_F_GAIN, SDR_F_THRESHOLD, SDR_F_PRE, SDR_F_POST, SDR_F_BOOK,
+       SDR_F_TX_FREQ, SDR_F_TX_OFFSET, SDR_F_TX_AMP, SDR_F_TX_MS,
        SDR_FIELDS };
 
 enum { SDR_S_FREQ, SDR_S_TRACE, SDR_S_MARK, SDR_S_DISPLAY, SDR_S_RECEIVER,
-       SDR_S_MEASURE,
+       SDR_S_MEASURE, SDR_S_TX,
        SDR_SECTIONS };
 
 /* What a trace shows: nothing, the latest spectrum, the average, or the
@@ -116,6 +117,7 @@ enum {
     CMD_TRIGGER, CMD_CAPS, CMD_FFT, CMD_RATE, CMD_BOOK_ADD, CMD_BOOK_NEXT,
     CMD_BOOK_CLEAR, CMD_LOOP_A, CMD_LOOP_B, CMD_LOOP, CMD_OCC_PAGE, CMD_HEALTH,
     CMD_RBW,
+    CMD_TX_CAPS = 560, CMD_TX_SEND, CMD_TX_LOAD, CMD_TX_TONE,
     CMD_TUNE5 = 1000                /* + MHz offset from 5000 */
 };
 
@@ -262,6 +264,16 @@ typedef struct {
     unsigned frames;                /* spectra written                 */
 } sdr_csv_t;
 
+/** @brief Local waveform settings and the acknowledged TX command sequence. */
+typedef struct {
+    int known, queued, phase, answered, failed, cancel;
+    int mhz, cycles, amplitude, ms;
+    unsigned hz, maximum, alignment, max_ms, low, high, step, chunk;
+    uint32_t *samples;
+    unsigned words, offset, sent;
+    char path[SDR_PATH];
+} sdr_transmit_t;
+
 /** @brief TikuSDR's state: the window and its controls, the model, the
  *         link to the board, recordings, and the splash and About box. */
 typedef struct {
@@ -333,6 +345,7 @@ typedef struct {
     char saved[200];                /* what the last recording became  */
     char shown[SDR_PATH];           /* the recording on screen, or ""  */
     sdr_csv_t csv;
+    sdr_transmit_t tx;
     unsigned menu_state;            /* what the menus last showed      */
     /* The splash, shown alone at start (id is 0 until it closes), and the
      * About box, the same card, which stays until it is dismissed. */
@@ -341,6 +354,27 @@ typedef struct {
     int64_t splash_from;
     int splash_stage;
 } sdr_t;
+
+/** @brief Initialize local TX defaults without issuing board commands. */
+void sdr_tx_init(sdr_t *st);
+/** @brief Validate and load a headerless little-endian packed IQ10 file locally. */
+int sdr_tx_file(sdr_t *st, const char *path);
+/** @brief Release the local waveform and cancel queued transmission work. */
+void sdr_tx_dispose(sdr_t *st);
+/** @brief Whether TX owns the command sequence or a burst is queued. */
+int sdr_tx_busy(const sdr_t *st);
+/** @brief Queue one burst after capabilities and settings have been checked. */
+int sdr_tx_request(sdr_t *st);
+/** @brief Request cancellation; an active firmware burst remains time-bounded. */
+void sdr_tx_cancel(sdr_t *st);
+/** @brief Consume a TX reply while the TX sequence owns the console. */
+void sdr_tx_line(sdr_t *st, const char *line);
+/** @brief Advance TX on an acknowledged command prompt. */
+void sdr_tx_prompt(sdr_t *st);
+/** @brief Schedule TX work; return nonzero while normal acquisition is held. */
+int sdr_tx_tick(sdr_t *st);
+/** @brief Queue a console command of at most 94 bytes on the borrowed board. */
+void sdr_link_command(sdr_t *st, const char *line);
 
 /* Saved workspace and measurement tools. Files are versioned text. */
 /** @brief Atomically save a small text document using locale-independent numbers. */

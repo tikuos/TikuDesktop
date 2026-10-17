@@ -31,6 +31,7 @@ static int sdr_test_ioctl(int fd, unsigned long request, ...)
 #define ioctl sdr_test_ioctl
 #include "../../apps/sdr/tiku_sdr_app.c"
 #include "../../apps/sdr/tiku_sdr_link.c"
+#include "../../apps/sdr/tiku_sdr_transmit.c"
 #include "../../apps/sdr/tiku_sdr_marker.c"
 #include "../../apps/sdr/tiku_sdr_model.c"
 #include "../../apps/sdr/tiku_sdr_navigation.c"
@@ -1392,6 +1393,123 @@ static void navigation_tests(const tiku_app_services_t *services, const char *di
     unlink(path);
 }
 
+/** @brief Exercise acknowledged bursts and refusal paths through the serial link. */
+static void transmit_tests(sdr_t *st, int master, int64_t *now, const char *dir)
+{
+    char got[256], path[1024], response[128];
+    st->paused = 1;
+    say(master, PROMPT); ticks(st, now, 1);
+    assert(!st->pending && !sdr_enabled(st, CMD_TX_SEND));
+    assert(!sdr_tx_request(st));
+    assert(tiku_sdr_app.pick(st, st->id, CMD_TX_CAPS) == 0);
+    ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr tx info\r"));
+    say(master, "TXCAP 0" PROMPT); ticks(st, now, 1);
+    assert(st->tx.known == -1 && !sdr_tx_request(st));
+    const char *caps[] = {
+        "TXCAP 1 80000000 16128 256 1001 2412 2462 5 8",
+        "TXCAP 1 80000000 16128 256 1000 2412 2462 5 9",
+        "TXCAP 1 80000000 16128 256 1000 2412 2462 5 8 trailing",
+        "TXCAP 1 80000000 16128 256 1000 2412 2462 5 8"
+    };
+    for (unsigned n = 0; n < sizeof caps / sizeof *caps; n++) {
+        st->tx.queued = 1; ticks(st, now, 1); board_read(master, got, sizeof got);
+        snprintf(response, sizeof response, "%s%s", caps[n], PROMPT);
+        say(master, response); ticks(st, now, 1);
+        assert(st->tx.known == (n == 3 ? 1 : -1));
+    }
+    assert(!st->pending && !sdr_tx_busy(st) && sdr_enabled(st, CMD_TX_SEND));
+    {
+        unsigned collapsed = st->collapsed;
+        st->collapsed = ((1u << SDR_SECTIONS) - 1u) & ~(1u << SDR_S_TX);
+        sdr_controls(st); sdr_paint(st);
+        assert(sdr_control_rect(st, CMD_TX_SEND).h > 0);
+        assert(tiku_surface_png(st->surface, "build/tests/test_sdr_transmit.png") == 0);
+        st->collapsed = collapsed;
+    }
+    st->trigger.armed = 1; assert(!sdr_tx_request(st)); st->trigger.armed = 0;
+    st->tx.ms = 1001; assert(!sdr_tx_request(st)); st->tx.ms = 100;
+    st->tx.mhz = 2438; assert(!sdr_tx_request(st)); st->tx.mhz = 2437;
+    assert(sdr_tx_request(st) && !sdr_tx_request(st));
+    ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr stop\r") && !sdr_enabled(st, CMD_RECORD));
+    say(master, "SDR stopped" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr tx tone 16 64\r"));
+    say(master, "TX load 1024 1024" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr tx send 2437 100\r"));
+    say(master, "TX active 2437 80000000 1024 100\r\nTX done 0 100000 80000000 1024" PROMPT);
+    ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr tx clear\r"));
+    say(master, "TX cleared" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr start\r"));
+    say(master, "SDR ready" PROMPT); ticks(st, now, 1);
+    assert(!sdr_tx_busy(st) && strstr(st->note, "Burst complete"));
+    /* A prompt without a load acknowledgment must lead directly to cleanup. */
+    assert(sdr_tx_request(st)); ticks(st, now, 1); board_read(master, got, sizeof got);
+    say(master, "SDR stopped" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    say(master, "TX load 0 1024" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr tx clear\r") && st->tx.failed);
+    say(master, "TX cleared" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    say(master, "SDR ready" PROMPT); ticks(st, now, 1);
+    snprintf(path, sizeof path, "%s/upload.iq10", dir);
+    FILE *f = fopen(path, "wb"); assert(f);
+    for (unsigned n = 0; n < 256; n++) { unsigned char v[4] = {64, 0, 1, 0}; assert(fwrite(v, 1, 4, f) == 4); }
+    assert(!fclose(f) && !sdr_tx_file(st, path) && st->tx.words == 256);
+    assert(!st->pending && !sdr_tx_busy(st));
+    assert(sdr_tx_request(st)); ticks(st, now, 1); board_read(master, got, sizeof got);
+    say(master, "SDR stopped" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr tx begin 256\r"));
+    say(master, "TX load 0 256" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strncmp(got, "sdr tx put 0 00010040", strlen("sdr tx put 0 00010040")) && strlen(got) < 96);
+    for (unsigned offset = 8; offset <= 256; offset += 8) {
+        snprintf(response, sizeof response, "TX load %u 256%s", offset, PROMPT);
+        say(master, response); ticks(st, now, 1); board_read(master, got, sizeof got);
+        if (offset < 256) {
+            snprintf(response, sizeof response, "sdr tx put %u ", offset);
+            assert(!strncmp(got, response, strlen(response)) && strlen(got) < 96);
+        } else { assert(!strcmp(got, "sdr tx send 2437 100\r")); }
+    }
+    say(master, "TX done 0 100000 80000000 256" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr tx clear\r"));
+    say(master, "TX cleared" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    say(master, "SDR ready" PROMPT); ticks(st, now, 1);
+    f = fopen(path, "r+b"); assert(f); assert(fputc(0xff, f) != EOF);
+    assert(!fseek(f, 3, SEEK_SET) && fputc(0xff, f) != EOF && !fclose(f));
+    uint32_t *prior = st->tx.samples;
+    assert(sdr_tx_file(st, path) == -1 && st->tx.samples == prior && !st->pending);
+    assert(sdr_tx_request(st)); ticks(st, now, 1); board_read(master, got, sizeof got);
+    say(master, "SDR stopped" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    say(master, "TX load 0 256" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    sdr_tx_cancel(st);
+    say(master, "TX load 8 256" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strcmp(got, "sdr tx clear\r"));
+    say(master, "TX cleared" PROMPT); ticks(st, now, 1); board_read(master, got, sizeof got);
+    say(master, "SDR ready" PROMPT); ticks(st, now, 1);
+    assert(strstr(st->note, "canceled") && !sdr_tx_busy(st));
+    {
+        sdr_t *failed = malloc(sizeof *failed); assert(failed); *failed = *st;
+        failed->tx.phase = TX_CLEAR; failed->tx.answered = 0;
+        sdr_tx_prompt(failed);
+        assert(failed->paused && failed->tx.known == -2 &&
+               !sdr_tx_request(failed) && !sdr_enabled(failed, CMD_TX_CAPS));
+        free(failed);
+    }
+    {
+        sdr_t *timed = malloc(sizeof *timed); assert(timed); *timed = *st;
+        tiku_app_services_t sv = *st->services; sv.board_reclaim = NULL;
+        timed->services = &sv; timed->fd = dup(st->fd); assert(timed->fd >= 0);
+        timed->tx.phase = TX_PUT; timed->pending = 1;
+        timed->now = timed->sent_at + ANSWER_US + 1;
+        deadlines(timed); board_read(master, got, sizeof got);
+        assert(strstr(got, "sdr tx clear\rsdr stop\r") && timed->fd < 0 && !sdr_tx_busy(timed));
+        free(timed);
+    }
+    assert(!sdr_tx_file(st, NULL) && !st->tx.samples);
+    assert(!unlink(path));
+    st->paused = 0; ticks(st, now, 1); board_read(master, got, sizeof got);
+    assert(!strncmp(got, "sdr spec ", 9));
+}
+
 static void gain_tests(sdr_t *st, int master, int64_t *now)
 {
     char got[256];
@@ -2240,6 +2358,7 @@ int main(void)
     /* Return to a live view for the receiver-control protocol test. */
     assert(tiku_sdr_app.pick(st, st->id, CMD_LIVE) == 0);
     gain_tests(st, master, &now);
+    transmit_tests(st, master, &now, dir);
     assert(tiku_sdr_app.pick(st, st->id, CMD_LIVE) == 0);
     /* A second recording, still going when the board is given back. */
     assert(tiku_sdr_app.pick(st, st->id, CMD_RECORD) == 0);

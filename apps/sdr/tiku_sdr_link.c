@@ -108,6 +108,8 @@ static void send_line(sdr_t *st, const char *text)
     st->sent_at = st->now;
 }
 
+void sdr_link_command(sdr_t *st, const char *line) { send_line(st, line); }
+
 /** @brief Give the board back to the desktop: a recording is stopped
  *         (st->saved says what it became; the note keeps saying why the
  *         board went), the port is closed, and the desktop is asked to
@@ -127,6 +129,7 @@ static void reclaim(sdr_t *st)
         st->fd = -1;
     }
     st->pending = 0;
+    st->tx.phase = st->tx.queued = st->tx.known = st->tx.cancel = 0;
     st->gain_queued = st->gain_inflight = 0;
     st->state = SDR_RECLAIMING;
     st->deadline = st->now + RECLAIM_US;
@@ -219,6 +222,11 @@ int sdr_connect(sdr_t *st)
 
 void sdr_disconnect(sdr_t *st)
 {
+    if (st->state == SDR_RUNNING && sdr_tx_busy(st)) {
+        st->closing = 1;
+        sdr_tx_cancel(st);
+        return;
+    }
     st->gain_queued = st->gain_inflight = 0;
     if (st->state == SDR_RELEASING) {
         st->closing = 1;               /* given back as soon as it is let go */
@@ -246,7 +254,7 @@ void sdr_disconnect_now(sdr_t *st)
     if (st->fd >= 0 && st->state == SDR_RUNNING) {
         /* Tell the board to stop and wait up to DRAIN_US for the line to
          * leave; the board is given back below. */
-        send_line(st, "sdr stop");
+        send_line(st, sdr_tx_busy(st) ? "sdr tx clear\rsdr stop" : "sdr stop");
         for (int64_t t = 0; t < DRAIN_US; t += 5000) {
             if (ioctl(st->fd, TIOCOUTQ, &queued) != 0 || queued == 0) break;
             usleep(5000);
@@ -299,6 +307,10 @@ int sdr_gain_request(sdr_t *st, int gain)
 /** @brief Read a startup, gain, capture, or shutdown reply from the board. */
 static void take_line(sdr_t *st, const char *line)
 {
+    if (st->state == SDR_RUNNING && st->tx.phase) {
+        sdr_tx_line(st, line);
+        return;
+    }
     if (st->state == SDR_RUNNING && st->caps_inflight) {
         if (st->caps_inflight == 2) (void)sdr_bands_parse(st, line);
         else (void)sdr_caps_parse(st, line);
@@ -369,6 +381,10 @@ static void take_line(sdr_t *st, const char *line)
 static void take_prompt(sdr_t *st)
 {
     st->pending = 0;
+    if (st->state == SDR_RUNNING && st->tx.phase) {
+        sdr_tx_prompt(st);
+        return;
+    }
     if (st->caps_inflight == 1 && st->caps_known == 1 &&
         receiver_part(*st->mcu ? st->mcu : st->board) == 5) {
         st->caps_inflight = 2;
@@ -469,6 +485,7 @@ static void deadlines(sdr_t *st)
     } else if (st->state == SDR_RUNNING && st->pending &&
                st->now - st->sent_at > ANSWER_US) {
         snprintf(st->note, sizeof st->note, "%s stopped answering.", st->board);
+        if (sdr_tx_busy(st)) { send_line(st, "\rsdr tx clear\rsdr stop"); }
         reclaim(st);
     }
 }
@@ -497,6 +514,7 @@ void sdr_link_tick(sdr_t *st)
         take_bytes(st, buf, (size_t)r);
         got += (size_t)r;
     }
+    if (sdr_tx_tick(st)) { return; }
     if (st->state == SDR_RUNNING && !st->pending && st->caps_queued && st->fd >= 0) {
         st->caps_queued = 0;
         st->caps_inflight = 1;
