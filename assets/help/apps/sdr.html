@@ -273,8 +273,8 @@ can be recovered from the saved spectra.</p>
 <h2 id="transmit">Transmission</h2>
 
 <p>Open the <b>Transmission</b> section to read the board's TX capabilities.
-It requires C5 firmware with the SDR TX option. C61 receiver firmware and
-older firmware leave transmission disabled. Choose an RF centre from
+It requires ESP32-C5 or ESP32-C61 firmware with the SDR TX option.
+Receiver-only and older firmware leave transmission disabled. Choose an RF centre from
 2412 to 2462 MHz in 5 MHz steps, and a burst of 1 to 1000 ms.</p>
 
 <p>A generated tone uses an offset in 78.125 kHz steps from -10000 to
@@ -286,7 +286,8 @@ bits 19:10, and zero in the upper twelve bits. Loading validates the file
 locally. <b>Use generated tone</b> selects the tone again.</p>
 
 <p><b>Transmit burst</b> stops RX, uploads the waveform with acknowledgments,
-plays one bounded burst, clears TX memory and resumes RX. Recording, replay
+plays one bounded burst, clears TX memory and resumes RX. On the C61,
+stopping RX shuts down Wi-Fi so TX can use the PHY exclusively. Recording, replay
 and armed triggers disable this action. Opening this section, loading a
 file, reconnecting and restoring a preset do not transmit. Disconnect
 cancels an upload; an active burst finishes before cleanup. If cleanup

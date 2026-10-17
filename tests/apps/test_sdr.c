@@ -2359,6 +2359,9 @@ int main(void)
     assert(tiku_sdr_app.pick(st, st->id, CMD_LIVE) == 0);
     gain_tests(st, master, &now);
     transmit_tests(st, master, &now, dir);
+    snprintf(st->mcu, sizeof st->mcu, "ESP32-C61");
+    sdr_tx_init(st);
+    transmit_tests(st, master, &now, dir);
     assert(tiku_sdr_app.pick(st, st->id, CMD_LIVE) == 0);
     /* A second recording, still going when the board is given back. */
     assert(tiku_sdr_app.pick(st, st->id, CMD_RECORD) == 0);
