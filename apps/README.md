@@ -28,6 +28,10 @@ Each production `.app` manifest declares the stable application ID, module,
 menu category, icon, types and startup identity. Source-folder names need not
 match these IDs. Products live in `build/runtime/apps/<id>/`.
 
-Run `make apps` from the repository root (or this forwarding Makefile).
+Run `make sdk` from the repository root, then `make -j6` in this directory.
+Set `SDK=/path/to/sdk` to use an installed SDK. Individual application
+directories also have Makefiles. See
+[independent application builds](../docs/architecture/application-builds.md)
+for source exports, application packages and installation.
 See [application architecture](../docs/architecture/applications.md) for the
 SDK, IPC boundary, manifests and adding an application.

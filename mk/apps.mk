@@ -54,13 +54,7 @@ EXAMPLES      := $(patsubst %,$(BUILD)/examples/tiku-example-%,$(EXAMPLE_NAMES))
 # would do -- not a re-implementation that agrees on good days.  Gated on
 # the TikuOS checkout being where TIKUOS says.
 BASIC_SRC   := $(TIKUOS)/basic/tiku_basic.c
-BASIC_GATES := -DTIKU_BASIC_GPIO_ENABLE=0 -DTIKU_BASIC_ADC_ENABLE=0 \
-               -DTIKU_BASIC_I2C_ENABLE=0 -DTIKU_BASIC_LED_ENABLE=0 \
-               -DTIKU_BASIC_RTC_ENABLE=0 -DTIKU_BASIC_NET_ENABLE=0 \
-               -DTIKU_BASIC_BLE_ENABLE=0 -DTIKU_BASIC_JSON_ENABLE=0 \
-               -DTIKU_BASIC_CRYPTO_ENABLE=0 -DTIKU_BASIC_HTTPS_ENABLE=0 \
-               -DTIKU_BASIC_REBOOT_ENABLE=0 -DTIKU_BASIC_PEEK_POKE_ENABLE=0 \
-               -DTIKU_BASIC_MODULE_ENABLE=0 -DTIKU_BASIC_FILE_ENABLE=0
+-include apps/basichost/config.mk
 ifneq ($(wildcard $(BASIC_SRC)),)
 BASIC_TARGETS := $(BASICHOST)
 # The interpreter's headers and its .inl parts too: this is one
@@ -69,7 +63,8 @@ BASIC_TARGETS := $(BASICHOST)
 BASIC_DEPS := $(wildcard $(TIKUOS)/basic/*.h) \
               $(TIKUOS)/kernel/memory/tiku_mem.h \
               $(wildcard $(TIKUOS)/basic/*.inl) \
-              $(wildcard apps/basichost/shell/*.h)
+              $(wildcard apps/basichost/*.h apps/basichost/shell/*.h \
+                         apps/basichost/hal/*.h apps/basichost/kernel/memory/*.h)
 
 $(BASICHOST): apps/basichost/tiku_basic_host.c $(BASIC_SRC) $(BASIC_DEPS) \
               | $(BUILD)
@@ -80,7 +75,6 @@ else
 BASIC_TARGETS :=
 $(info tiku-basic not built: no TikuOS checkout at $(TIKUOS); set TIKUOS= to name one)
 endif
-
 
 # Each application is a self-describing bundle; metadata is copied as data.
 APP_MANIFESTS := $(APPS_D)/editor/app.manifest \
@@ -266,9 +260,6 @@ $(APPS_D)/framework-demo/app.manifest: examples/apps/framework/framework-demo.ap
 	cp $< $@
 
 apps loadable: $(APPS_D)/image/TikuImage.so
-$(APPS_D)/image/TikuImage.so: apps/image/tiku_image_app.c apps/image/tiku_image_window.c $(wildcard apps/image/*.h apps/image/*.inl) $(PIC_LIBS)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ apps/image/tiku_image_app.c apps/image/tiku_image_window.c $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/image/app.manifest: apps/image/image.app
 	@mkdir -p $(dir $@)
@@ -276,9 +267,6 @@ $(APPS_D)/image/app.manifest: apps/image/image.app
 
 apps loadable: $(APPS_D)/pdf/TikuPDF.so
 PDFVIEW_SRC := apps/pdf/tiku_pdfview_app.c apps/pdf/tiku_pdfview.c
-$(APPS_D)/pdf/TikuPDF.so: $(PDFVIEW_SRC) $(wildcard apps/pdf/*.h apps/pdf/*.inl) $(PIC_LIBS)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(PDFVIEW_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/pdf/app.manifest: apps/pdf/pdf.app
 	@mkdir -p $(dir $@)
@@ -286,9 +274,6 @@ $(APPS_D)/pdf/app.manifest: apps/pdf/pdf.app
 
 apps loadable: $(APPS_D)/archive/TikuArchive.so
 ARCVIEW_SRC := apps/archive/tiku_arcview_app.c apps/archive/tiku_arcview.c
-$(APPS_D)/archive/TikuArchive.so: $(ARCVIEW_SRC) $(wildcard apps/archive/*.h apps/archive/*.inl) $(PIC_LIBS)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(ARCVIEW_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/archive/app.manifest: apps/archive/archive.app
 	@mkdir -p $(dir $@)
@@ -299,13 +284,6 @@ OFFICEVIEW_SRC := apps/office/tiku_officeview.c
 OFFICEVIEW_DEPS := $(wildcard apps/office/*.h apps/office/*.inl)
 DOCVIEW_SRC := apps/doc/tiku_docview_app.c $(OFFICEVIEW_SRC)
 SLIDESVIEW_SRC := apps/slides/tiku_slidesview_app.c $(OFFICEVIEW_SRC)
-$(APPS_D)/doc/TikuDoc.so: $(DOCVIEW_SRC) $(OFFICEVIEW_DEPS) $(PIC_LIBS)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -Iapps/office -o $@ $(DOCVIEW_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
-
-$(APPS_D)/slides/TikuSlides.so: $(SLIDESVIEW_SRC) $(OFFICEVIEW_DEPS) $(PIC_LIBS)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -Iapps/office -o $@ $(SLIDESVIEW_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/doc/app.manifest: apps/doc/doc.app
 	@mkdir -p $(dir $@)
@@ -317,9 +295,6 @@ $(APPS_D)/slides/app.manifest: apps/slides/slides.app
 
 apps loadable: $(APPS_D)/diff/TikuDiff.so
 DIFFVIEW_SRC := apps/diff/tiku_diffview_app.c apps/diff/tiku_diffview.c
-$(APPS_D)/diff/TikuDiff.so: $(DIFFVIEW_SRC) $(wildcard apps/diff/*.h apps/diff/*.inl) $(PIC_LIBS)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(DIFFVIEW_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/diff/app.manifest: apps/diff/diff.app
 	@mkdir -p $(dir $@)
@@ -327,9 +302,6 @@ $(APPS_D)/diff/app.manifest: apps/diff/diff.app
 
 apps loadable: $(APPS_D)/grab/TikuGrab.so
 GRABVIEW_SRC := apps/grab/tiku_grabview_app.c apps/grab/tiku_grabview.c
-$(APPS_D)/grab/TikuGrab.so: $(GRABVIEW_SRC) $(wildcard apps/grab/*.h) $(PIC_LIBS)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(GRABVIEW_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/grab/app.manifest: apps/grab/grab.app
 	@mkdir -p $(dir $@)
@@ -337,9 +309,6 @@ $(APPS_D)/grab/app.manifest: apps/grab/grab.app
 
 apps loadable: $(APPS_D)/sdr/TikuSDR.so
 SDR_SRC := $(sort $(wildcard apps/sdr/*.c))
-$(APPS_D)/sdr/TikuSDR.so: $(SDR_SRC) $(wildcard apps/sdr/*.h) $(PIC_LIBS)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(SDR_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 $(APPS_D)/sdr/app.manifest: apps/sdr/sdr.app
 	@mkdir -p $(dir $@)
 	cp $< $@
@@ -348,10 +317,6 @@ apps loadable: $(APPS_D)/reader/TikuReader.so
 READER_SRC := $(sort $(wildcard apps/reader/*.c))
 READER_HEADERS := $(wildcard apps/reader/*.h)
 READER_CORE_SRC := $(filter-out apps/reader/tiku_reader_app.c,$(READER_SRC))
-$(APPS_D)/reader/TikuReader.so: $(READER_SRC) $(READER_HEADERS) $(PIC_LIBS)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -fvisibility=hidden -o $@ $(READER_SRC) $(PIC_LIBS) \
-	      $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/reader/app.manifest: apps/reader/reader.app
 	@mkdir -p $(dir $@)
@@ -359,11 +324,6 @@ $(APPS_D)/reader/app.manifest: apps/reader/reader.app
 
 apps loadable: $(APPS_D)/circuit/TikuCircuit.so
 CIRCUIT_SRC := $(sort $(wildcard apps/circuit/*.c))
-$(APPS_D)/circuit/TikuCircuit.so: $(CIRCUIT_SRC) $(wildcard apps/circuit/*.h) \
-        $(PIC_LIBS)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -fvisibility=hidden -o $@ $(CIRCUIT_SRC) $(PIC_LIBS) \
-	      $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/circuit/app.manifest: apps/circuit/circuit.app
 	@mkdir -p $(dir $@)
@@ -371,11 +331,6 @@ $(APPS_D)/circuit/app.manifest: apps/circuit/circuit.app
 
 apps loadable: $(APPS_D)/marker/TikuMarker.so
 MARKER_SRC := apps/marker/tiku_marker_app.c
-$(APPS_D)/marker/TikuMarker.so: $(MARKER_SRC) apps/marker/tiku_marker.h \
-        $(READER_CORE_SRC) $(READER_HEADERS) $(PIC_LIBS)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -fvisibility=hidden -o $@ $(MARKER_SRC) \
-	      $(READER_CORE_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(APPS_D)/marker/app.manifest: apps/marker/marker.app
 	@mkdir -p $(dir $@)
@@ -383,28 +338,12 @@ $(APPS_D)/marker/app.manifest: apps/marker/marker.app
 
 apps loadable: $(APPS_D)/monitor/DeviceMonitor.so $(APPS_D)/vfs/VFSInspector.so
 DEVICE_UTIL_DEPS := $(wildcard apps/deviceutils/*.c apps/deviceutils/*.inl)
-$(APPS_D)/monitor/DeviceMonitor.so: $(DEVICE_UTIL_DEPS) $(PIC_LIBS)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ apps/deviceutils/tiku_device_app.c $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm -pthread
-$(APPS_D)/vfs/VFSInspector.so: $(DEVICE_UTIL_DEPS) $(PIC_LIBS)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -DTIKU_VFS_INSPECTOR -o $@ apps/deviceutils/tiku_device_app.c $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm -pthread
 $(APPS_D)/monitor/app.manifest: apps/deviceutils/monitor.app
 	@mkdir -p $(dir $@)
 	cp $< $@
 $(APPS_D)/vfs/app.manifest: apps/deviceutils/vfs.app
 	@mkdir -p $(dir $@)
 	cp $< $@
-
-$(APPS_D)/terminal/terminal.so: apps/terminal/tiku_term.c $(PIC_LIBS) | $(APPS_D)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
-
-$(APPS_D)/editor/editor.so: $(EDITOR_SRC) $(EDITOR_HEADERS) $(PICLIB)/libtiku_editor.a \
-    $(PIC_LIBS) | $(APPS_D)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(EDITOR_SRC) $(PICLIB)/libtiku_editor.a $(PIC_LIBS) \
-	    $(LDFLAGS) $(X11_LIBS) -lm
 
 $(BUILD)/tests/slowstatvfs.so: tests/fixtures/tools/slowstatvfs.c | $(BUILD)/tests
 	@mkdir -p $(dir $@)
@@ -420,47 +359,15 @@ $(BUILD)/tests/Fault.so: tests/fixtures/fault/tiku_fault.c $(PIC_LIBS) | $(BUILD
 
 BENCH_SRC := $(sort $(wildcard apps/bench/*.c))
 BENCH_HEADERS := $(wildcard apps/bench/*.h)
-$(APPS_D)/bench/Bench.so: $(BENCH_SRC) $(BENCH_HEADERS) $(PIC_LIBS) | $(APPS_D)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(BENCH_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
-
-$(APPS_D)/calculator/DeveloperCalculator.so: apps/developer-calculator/tiku_calculator.c $(wildcard apps/developer-calculator/*.inl) $(PIC_LIBS) | $(APPS_D)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
-
-$(APPS_D)/calc/Calculator.so: apps/calculator/tiku_calc.c $(wildcard apps/calculator/*.inl) $(PIC_LIBS) | $(APPS_D)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
-
-$(APPS_D)/notes/TikuNotes.so: apps/notes/tiku_notes.c $(PIC_LIBS) | $(APPS_D)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
-
-$(APPS_D)/hex/TikuHex.so: apps/hex/tiku_hex.c apps/hex/tiku_hex_model.c apps/hex/tiku_hex_model.h $(PIC_LIBS) | $(APPS_D)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ apps/hex/tiku_hex.c apps/hex/tiku_hex_model.c $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 CONSOLE_SRC := $(sort $(wildcard apps/console/*.c))
 CONSOLE_HEADERS := $(wildcard apps/console/*.h)
-$(APPS_D)/console/TikuConsole.so: $(CONSOLE_SRC) $(CONSOLE_HEADERS) $(PIC_LIBS) | $(APPS_D)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(CONSOLE_SRC) $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 IDE_SRC := $(sort $(wildcard apps/ide/*.c))
 IDE_HEADERS := $(wildcard apps/ide/*.h)
-$(APPS_D)/basic/TikuBasic.so: $(IDE_SRC) $(IDE_HEADERS) $(PICLIB)/libtiku_editor.a \
-                              $(PIC_LIBS) | $(PROG_D)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -o $@ $(IDE_SRC) $(PICLIB)/libtiku_editor.a $(PIC_LIBS) \
-	      $(LDFLAGS) $(X11_LIBS) -lm
 
 # The same source wearing its other name: what differs is what it puts
 # forward, and a copy would only learn to disagree.
-$(APPS_D)/c/TikuC.so: $(IDE_SRC) $(IDE_HEADERS) $(PICLIB)/libtiku_editor.a \
-                      $(PIC_LIBS) | $(PROG_D)
-	@mkdir -p $(dir $@)
-	$(CC) $(SO_CFLAGS) -DTIKU_IDE_C -o $@ $(IDE_SRC) $(PICLIB)/libtiku_editor.a \
-	      $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 define EXAMPLE_SO_RULE
 $(APPS_D)/$(1)/$(1).so: examples/apps/$(1).c $(PIC_LIBS)
@@ -495,3 +402,13 @@ banners:
 # Probe the first board on the bench.
 probe: $(PROBE)
 	$(PROBE) -v
+
+# Production modules use the same descriptors as the standalone apps build.
+APPS_SOURCE := apps
+APP_BUILD := $(BUILD)/applications
+APP_OUTPUT := $(APPS_D)
+APP_KIT_DIR := $(PICLIB)
+APP_AVAILABLE_KITS := $(patsubst libtiku_%.a,%,$(notdir $(PIC_LIBS) $(PICLIB)/libtiku_editor.a))
+APP_BASE_CFLAGS := $(CFLAGS) $(KIT_INC)
+APP_BASE_LDFLAGS := $(LDFLAGS) $(X11_LIBS) -lm -pthread
+-include apps/catalog.mk apps/rules.mk

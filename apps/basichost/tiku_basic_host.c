@@ -15,7 +15,7 @@
 #include <shell/tiku_shell.h>
 #include <kernel/timers/tiku_clock.h>
 #include <kernel/vfs/tiku_vfs.h>
-#include "../../../basic/tiku_basic.h"
+#include "tiku_basic.h"
 
 /*---------------------------------------------------------------------------*/
 /* The kernel, as libc                                                       */

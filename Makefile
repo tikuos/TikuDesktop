@@ -39,6 +39,7 @@ include mk/tests.mk
 include mk/sanitize.mk
 include mk/bundle.mk
 include mk/package.mk
+include mk/sdk.mk
 
 # Said outright: the default goal is the first target with a recipe, and a
 # housekeeping rule above `all` would quietly become what a bare `make`
@@ -130,6 +131,7 @@ check-architecture: shells
 
 .PHONY: check-layout
 check-layout:
+	@python3 tools/test_app_build.py
 	@python3 tools/test_layout.py
 
 check-shipping:

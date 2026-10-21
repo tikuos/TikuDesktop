@@ -4,6 +4,9 @@ Installed applications run in separate host processes. Their sources and
 binaries are not part of the desktop shell. The boundary is enforced by
 `make check-architecture`, including inspection of the linked shell symbols.
 
+See [independent application builds](application-builds.md) for the
+core-only desktop, installed SDK and per-application build and package commands.
+
 ## Ownership
 
 | Source | Responsibility | Output |

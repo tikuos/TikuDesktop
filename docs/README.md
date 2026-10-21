@@ -26,3 +26,6 @@ inside TikuDesktop live in `assets/help/` and are packaged with the runtime.
 notes and change records. These describe their original context and may use
 older paths; they are not the source-layout authority. Use the layout guide
 and Makefiles for the current structure.
+
+[Independent application builds](architecture/application-builds.md) covers
+the core-only desktop, exported SDK and standalone application packages.

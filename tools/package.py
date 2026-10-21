@@ -84,22 +84,22 @@ def resources(destination, root=ROOT):
         shutil.copytree(source, destination / name, dirs_exist_ok=True)
 
 
-def package(root=ROOT):
+def package(root=ROOT, core=False):
     """Replace only a distribution carrying the generated-package marker."""
     parent = root / 'dist'
     parent.mkdir(exist_ok=True)
-    destination = parent / 'TikuDesktop'
+    destination = parent / ('TikuDesktop-core' if core else 'TikuDesktop')
     if destination.is_symlink():
         raise RuntimeError('Refusing to replace a symlink distribution')
     if destination.exists() and not (destination / '.tiku-package.json').is_file():
-        raise RuntimeError('dist/TikuDesktop is not a generated package; preserve it first')
+        raise RuntimeError(f'{destination} is not a generated package; preserve it first')
     with tempfile.TemporaryDirectory(prefix='.tiku-package-', dir=parent) as temp:
         stage = Path(temp) / 'TikuDesktop'
         (stage / 'system').mkdir(parents=True)
         (stage / 'apps').mkdir()
         for name in SYSTEM:
             shutil.copy2(root / 'build/runtime/system' / name, stage / 'system' / name)
-        inventory = manifests(root)
+        inventory = {} if core else manifests(root)
         for app_id, (manifest, module) in inventory.items():
             source = root / 'build/runtime/apps' / app_id
             bundle = stage / 'apps' / app_id
@@ -117,7 +117,7 @@ def package(root=ROOT):
             json.dumps({'version': 1, 'apps': list(inventory)}, indent=2) + '\n')
         validate(stage, inventory, root)
         replace_generated(stage, destination)
-    print('Package: dist/TikuDesktop (system, apps, assets; no demos or test binaries)')
+    print(f'Package: {destination} ({len(inventory)} applications)')
 
 
 def validate(package_root, inventory, root=ROOT):
@@ -174,10 +174,11 @@ def validate(package_root, inventory, root=ROOT):
             raise RuntimeError('Development file in package: ' + str(path))
 
 
-def check(root=ROOT):
+def check(root=ROOT, core=False):
     """Check every declared executable and the resources needed outside the repo."""
-    inventory = manifests(root)
-    validate(root / 'dist/TikuDesktop', inventory, root)
+    inventory = {} if core else manifests(root)
+    name = 'TikuDesktop-core' if core else 'TikuDesktop'
+    validate(root / 'dist' / name, inventory, root)
     print(f'Package complete: {len(inventory)} apps and bundled resources')
 
 
@@ -232,13 +233,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('resources', 'package', 'check', 'mac'))
     parser.add_argument('--host', choices=('cocoa', 'x11'), default='cocoa')
+    parser.add_argument('--core', action='store_true')
     args = parser.parse_args()
     if args.action == 'resources':
         resources(ROOT / 'build/runtime/assets')
         launchers(ROOT / 'build/runtime')
     elif args.action == 'package':
-        package()
+        package(core=args.core)
     elif args.action == 'check':
-        check()
+        check(core=args.core)
     else:
         mac_bundle(args.host)

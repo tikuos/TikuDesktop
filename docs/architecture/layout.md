@@ -1,8 +1,9 @@
 # Repository and build layout
 
 The repository has three distinct kinds of content: maintained source,
-generated development output, and distributable runtime output. None is
-nested inside another component's source directory.
+generated development output, and distributable runtime output. Root builds
+use `build/`; standalone application builds use `apps/build/` by default.
+Both output directories are excluded from version control.
 
 ## Source ownership
 
@@ -125,8 +126,9 @@ No user home or preferences migration is performed.
 | Root book/plans, Tracker specs/guides | `docs/architecture/`, `docs/plans/`, `docs/guides/` |
 
 The old `TikuTracker/Makefile` remains a forwarding entry point. It contains
-no competing source tree or build. `apps/Makefile` and `kits/Makefile` retain
-the same forwarding behavior.
+no competing source tree or build. `kits/Makefile` forwards to the root build. `apps/Makefile` builds
+applications against an exported SDK; see
+[independent application builds](application-builds.md).
 
 `tools/prepare_build.py` moves recognized legacy generated directories into
 their canonical locations without overwriting occupied destinations. When
@@ -159,7 +161,7 @@ change. They are not inputs to the build or package.
 1. Put reusable public functionality in its owning kit; shell-private code
    belongs under `system/`, app behavior under `apps/`.
 2. Put production metadata in the app's `.app` manifest and add its module
-   rule in `mk/apps.mk`. Do not change an established ID for a directory rename.
+   descriptor in `apps/catalog.mk`. Do not change an established ID for a directory rename.
 3. Put examples under `examples/`, not `apps/`. Deliberately crashing helpers
    belong in `tests/fixtures/` and must never be production manifests.
 4. Add unit tests under the appropriate `tests/` group. Test basenames must

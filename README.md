@@ -16,7 +16,7 @@ macOS. This is an independent repository, normally checked out at
 | `assets/` | Help, translations, application artwork, sounds and icon sources |
 | `board/` | Optional firmware-side GUI bridge and board examples |
 | `tools/` | Build helpers, source checks, asset generators and developer tools |
-| `mk/` | The single build's Makefile fragments |
+| `mk/` | Desktop, kit and development build fragments |
 | `docs/` | Architecture, guides, contracts, historical plans and notes |
 
 See [the layout guide](docs/architecture/layout.md) for the detailed tree,
@@ -35,6 +35,8 @@ it does not require an X server. Python 3 must also be available.
 ```sh
 make -j8                 # complete development build, including tests and demos
 make run                 # build and launch TikuDesktop
+make core                # desktop and system hosts, without compiling apps
+make sdk                 # export the application SDK to build/sdk/
 make runtime             # production binaries, application bundles and assets
 ./build/runtime/TikuDesktop
 ./build/runtime/TikuDesktop -d -p /dev/ttyACM0   # board over serial
@@ -45,8 +47,9 @@ The main executable names, application IDs, settings and module ABI are
 unchanged. `./build/TikuDesktop` and `./build/tiku-desk` remain
 compatibility launchers. The single-window TikuTracker is built only for
 the test harness, under `build/dev/`: the file manager does not start
-without the desktop. Running `make` inside
-`TikuTracker/`, `apps/` or `kits/` still forwards to this build.
+without the desktop. `TikuTracker/` and `kits/` forward to the root build.
+The `apps/` subtree builds independently against an exported SDK; see
+[independent application builds](docs/architecture/application-builds.md).
 
 The optional `tiku-basic` host interpreter is compiled from
 `../basic/tiku_basic.c`. Set `TIKUOS=/path/to/tikuOS` if the
