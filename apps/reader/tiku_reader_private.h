@@ -15,6 +15,7 @@
 #include <strings.h>
 
 #include "tiku_doc_paint.h"
+#include "tiku_html_view.h"
 #include "tiku_markdown.h"
 #include "tiku_font.h"
 #include "tiku_strings.h"
@@ -71,15 +72,17 @@ typedef struct {
 typedef struct { char page[TIKU_PATH_MAX], title[128], snippet[160]; int block, level, children; } help_row_t;
 /** @brief An image a page names: its file, its size and its pixels. */
 typedef struct {
-    char src[TIKU_PATH_MAX];        /**< as the page names it            */
+    char *src;                     /**< owned local reference or embedded URI */
     char path[TIKU_PATH_MAX];       /**< the file it resolved to         */
     tiku_image_t image;             /**< decoded pixels; none until drawn */
     int width, height;              /**< from the file's header          */
     int failed;                     /**< refused or undecodable          */
+    int embedded;                   /**< a bounded PNG data URI */
     unsigned long used;             /**< image_clock when last drawn     */
 } help_image_t;
 /** @brief The reading state behind a window's page. */
 struct help_reader {
+    tiku_html_view_t html;          /**< borrowed model and shared HTML view state */
     char *text;                     /**< the page's text, flattened      */
     /** each run's offset into text; text's length; the selection's two
      *  ends; a selection drag under way; the block last pointed into */
@@ -118,6 +121,7 @@ struct help_reader {
     help_image_t *images;           /**< the page's images, in order met */
     int nimages, image_cap;         /**< held; room for                  */
     size_t image_bytes;             /**< decoded pixels held, in bytes   */
+    size_t image_sources;           /**< owned image reference bytes */
     unsigned long image_clock;      /**< counts drawings, for eviction   */
     tiku_surface_t *surface;        /**< what the page is being drawn on */
 };

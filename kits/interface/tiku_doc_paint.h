@@ -6,11 +6,9 @@
  *
  * tiku_doc_paint.h - a page laid out by tiku_doc, drawn.
  *
- * The painter measures nothing.  Every rectangle it draws in comes from
- * the piece table tiku_doc_layout filled, which is the same table the
- * hit test searches, so a link is where it was drawn and a word is
- * where it was measured.  A picture is put down by the caller, since
- * the interface kit cannot decode one.
+ * Drawing uses the document's block, line and piece geometry. Optional
+ * callbacks supply image pixels and custom text painting. The core
+ * painter does not measure text or decode resources.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -23,6 +21,10 @@
 /** @brief Put a picture down in @p where.  The caller owns the pixels. */
 typedef void (*tiku_doc_draw_image_fn)(void *ctx, const char *src,
                                        tiku_rect_t where);
+/** @brief Draw a piece's text, decorations and focus using its laid-out baseline.
+ *  @note The painter supplies the current piece clip and resolved default ink. */
+typedef void (*tiku_doc_draw_text_fn)(void *ctx, tiku_surface_t *surface,
+    const tiku_doc_t *doc, int piece, tiku_rect_t where, int baseline, tiku_rgb_t ink);
 
 /** @brief What one drawing of a page is told. */
 typedef struct {
@@ -33,14 +35,15 @@ typedef struct {
     const char *cut;
     tiku_doc_draw_image_fn image;   /* NULL frames a picture's place    */
     void *image_ctx;                /* handed to image                  */
+    tiku_doc_draw_text_fn text;     /**< optional replacement for text/decorations */
+    void *text_ctx;
 } tiku_doc_paint_t;
 
 /**
  * @brief Draw the part of @p d that falls inside @p r.
  *
- * Only the lines the scroll shows are drawn, and only the blocks they
- * belong to are decorated.  @p how may be NULL, which draws the top of
- * the page with nothing focused.
+ * Visible lines and intersecting container/cell backgrounds are painted.
+ * @p how may be NULL, which draws the top with nothing focused.
  */
 void tiku_doc_draw(tiku_surface_t *s, const tiku_doc_t *d, tiku_rect_t r,
                    const tiku_doc_paint_t *how);

@@ -60,6 +60,13 @@
 /* How deep the elements may nest while reading.  Parse-time only. */
 #define TIKU_DOC_DEPTH_MAX   16
 
+#ifndef TIKU_DOC_CSS_RULES_MAX
+#define TIKU_DOC_CSS_RULES_MAX 64
+#endif
+#ifndef TIKU_DOC_CSS_BYTES_MAX
+#define TIKU_DOC_CSS_BYTES_MAX 32768
+#endif
+
 /** @brief Nothing: no link, no line, no block, no piece. */
 #define TIKU_DOC_NONE (-1)
 
@@ -86,6 +93,12 @@ typedef enum {
      * read back by anything that reads the window's words.
      */
     TIKU_DOC_BLOCK_NOTICE,
+    TIKU_DOC_BLOCK_H4,
+    TIKU_DOC_BLOCK_H5,
+    TIKU_DOC_BLOCK_H6,
+    TIKU_DOC_BLOCK_DEFINITION,
+    TIKU_DOC_BLOCK_BOX,
+    TIKU_DOC_BLOCK_CAPTION,
     TIKU_DOC_BLOCK_KINDS
 } tiku_doc_block_kind_t;
 
@@ -111,11 +124,39 @@ typedef enum {
 #define TIKU_DOC_RUN_BREAK   0x02u
 /** @brief Spaces and newlines inside this run are the page's own. */
 #define TIKU_DOC_RUN_PRE     0x04u
+/** @brief The run has an explicit RGB foreground. */
+#define TIKU_DOC_RUN_COLOR   0x08u
+/** @brief Underline the run's painted pieces. */
+#define TIKU_DOC_RUN_UNDERLINE 0x10u
+/** @brief Strike through the run's painted pieces. */
+#define TIKU_DOC_RUN_STRIKE  0x20u
+/** @brief Suppress the link's default underline; explicit decorations remain. */
+#define TIKU_DOC_RUN_LINK_PLAIN 0x40u
+/** @brief Paint an RGB background under the run's pieces. */
+#define TIKU_DOC_RUN_BACKGROUND 0x80u
+
+/** @brief Style conversion notices; these do not truncate document text. */
+enum {
+    TIKU_DOC_CSS_UNSUPPORTED = 0x01u,
+    TIKU_DOC_CSS_LIMIT = 0x02u,
+    TIKU_DOC_CSS_SYNTAX = 0x04u,
+    TIKU_DOC_FONT_FALLBACK = 0x08u,
+    TIKU_DOC_FLOW_FALLBACK = 0x10u,
+    TIKU_DOC_TABLE_FALLBACK = 0x20u
+};
 
 /** @brief An ordered list: the item's number is its own. */
 #define TIKU_DOC_BLOCK_ORDERED 0x01u
 /** @brief A cell of the head of its table: a <th>, drawn bold. */
 #define TIKU_DOC_BLOCK_HEADER  0x02u
+/** @brief The element's enclosing CSS box supplies its outer spacing. */
+#define TIKU_DOC_BLOCK_BOX_CHILD 0x04u
+/** @brief A box groups the image and caption content of a figure. */
+#define TIKU_DOC_BLOCK_FIGURE 0x08u
+/** @brief A box contains one table and its caption. */
+#define TIKU_DOC_BLOCK_TABLE 0x10u
+/** @brief Maximum row span retained by the bounded table layout. */
+#define TIKU_DOC_ROWSPAN_MAX 64
 
 /*
  * Which table filled, as bits; tiku_doc_full_first() names the first as
@@ -150,6 +191,49 @@ typedef enum {
  * what is already there.
  */
 #define TIKU_DOC_COLS_FOLDED  0x800u
+/** @brief Layout stopped before vertical coordinates exceeded their budget. */
+#define TIKU_DOC_FULL_HEIGHT  0x1000u
+/** @brief Vertical coordinate budget, including trailing space and notices. */
+#define TIKU_DOC_HEIGHT_MAX   (INT32_MAX / 4)
+
+/** @brief Logical font: 16.16 root-size scale plus a 16.16 pixel offset. */
+typedef struct {
+    int32_t scale, offset;
+    uint8_t family, weight, italic, specified;
+} tiku_doc_font_t;
+
+/** @brief Left-to-right text alignment within a block's available width. */
+enum { TIKU_DOC_ALIGN_LEFT, TIKU_DOC_ALIGN_CENTER, TIKU_DOC_ALIGN_RIGHT };
+/** @brief Collapsing and wrapping policy for a run's whitespace. */
+enum {
+    TIKU_DOC_WHITE_NORMAL, TIKU_DOC_WHITE_PRE_WRAP,
+    TIKU_DOC_WHITE_PRE, TIKU_DOC_WHITE_NOWRAP
+};
+/** @brief Line-height expression: normal, font-size factor or root-size length. */
+enum { TIKU_DOC_HEIGHT_NORMAL, TIKU_DOC_HEIGHT_FACTOR, TIKU_DOC_HEIGHT_LENGTH };
+
+/** @brief Inherited flow style with 16.16 line-height scale and pixel offset. */
+typedef struct {
+    int32_t scale, offset;
+    uint8_t height, align, whitespace;
+} tiku_doc_flow_t;
+
+/** @brief A bounded CSS length; value uses 16.16 units. */
+typedef struct {
+    int32_t value;
+    uint8_t unit;
+} tiku_doc_length_t;
+/** @brief CSS box lengths, resolved against the current font and containing box. */
+enum { TIKU_DOC_PX, TIKU_DOC_EM, TIKU_DOC_REM, TIKU_DOC_PERCENT, TIKU_DOC_AUTO };
+/** @brief Physical CSS sides in clockwise order. */
+enum { TIKU_DOC_TOP, TIKU_DOC_RIGHT, TIKU_DOC_BOTTOM, TIKU_DOC_LEFT };
+
+/** @brief Noninherited block box style with a uniform solid border. */
+typedef struct {
+    tiku_doc_length_t margin[4], padding[4], width, max_width, border, height;
+    uint32_t background, border_color;
+    uint8_t has_background, border_style, border_declared;
+} tiku_doc_box_t;
 
 /**
  * @brief One stretch of one face, one ink and one link.
@@ -161,10 +245,14 @@ typedef struct {
     int32_t off;                /* into the page's text                  */
     int32_t len;
     int32_t link;               /* into the link table, or TIKU_DOC_NONE */
-    uint8_t face;               /* a TIKU_MEASURE_* number               */
+    uint16_t face;              /* a TIKU_MEASURE_* number               */
     uint8_t ink;                /* tiku_doc_ink_t                        */
     uint8_t flags;
     uint8_t spare;
+    uint32_t color;             /**< RGB foreground when RUN_COLOR is set */
+    uint32_t background;
+    tiku_doc_font_t font;
+    tiku_doc_flow_t flow;
 } tiku_doc_run_t;
 
 /** @brief A paragraph, a heading, an item: what the runs hang from. */
@@ -178,6 +266,15 @@ typedef struct {
     uint8_t kind, depth, flags;
     uint8_t col, span;          /* a cell's column, and how many it takes */
     uint8_t spare;
+    tiku_doc_font_t font;
+    tiku_doc_flow_t flow;
+    tiku_doc_box_t box;
+    int32_t end;                /**< first block after a box's descendants */
+    int32_t x, w;               /**< laid-out border box */
+    int32_t border_px;          /**< resolved uniform border width */
+    int32_t parent;             /**< enclosing box, or TIKU_DOC_NONE */
+    uint8_t rowspan;
+    int32_t content_x, content_w; /**< resolved horizontal content interval */
 } tiku_doc_block_t;
 
 /**
@@ -224,6 +321,7 @@ typedef struct {
     int32_t src, alt;
     int32_t w, h;
     int32_t block, spare;
+    tiku_doc_length_t width, height, max_width;
 } tiku_doc_image_t;
 
 /** @brief What a point landed on. */
@@ -293,10 +391,12 @@ typedef struct {
     int nblock, nrun, nline, npiece, nlink, nanchor, nimage;
     int title;                  /* into the text, or TIKU_DOC_NONE       */
     unsigned full;              /* which caps filled, and how            */
+    unsigned notices;          /**< CSS conversion and resource notices */
     /* What the tables describe: the width they were laid for, and the
      * plain face's height when they were.  A layout asked for again at
      * both is the one already there. */
     int laid_width, laid_height;
+    unsigned laid_font_stamp;   /**< font family/source used by layout */
     int height;
     tiku_doc_image_fn image_fn;
     void *image_ctx;
@@ -339,9 +439,11 @@ void tiku_doc_images(tiku_doc_t *d, tiku_doc_image_fn fn, void *ctx);
  * @brief Read @p html into blocks and runs, and forget what was there.
  *
  * Entities are decoded, runs of blank space in flow content become one
- * space, and the space inside <pre> is the page's own.  A tag this
- * dialect does not know keeps its text and loses its effect; script,
- * style, head and comments lose both.
+ * space, and the space inside <pre> is the page's own. Element and attribute
+ * names ignore ASCII case. Unknown elements retain text; script, style, head
+ * and comments omit their content. Embedded stylesheets and inline styles
+ * resolve supported text properties; CSS losses set notices. Unterminated
+ * quoted tags consume the remainder.
  *
  * @return 1 when the whole page fitted; 0 when a cap filled, which
  *         tiku_doc_full() then names.
@@ -368,6 +470,8 @@ int tiku_doc_laid(const tiku_doc_t *d);
 
 /** @brief Which caps filled, as TIKU_DOC_FULL_* bits. */
 unsigned tiku_doc_full(const tiku_doc_t *d);
+/** @brief CSS conversion and TIKU_DOC_FONT_FALLBACK notices. */
+unsigned tiku_doc_notices(const tiku_doc_t *d);
 
 /**
  * @brief The first cap that filled, as a noun and the number it hit.
@@ -389,6 +493,8 @@ int tiku_doc_line_count(const tiku_doc_t *d);
 int tiku_doc_piece_count(const tiku_doc_t *d);
 /** @brief Block @p i, or NULL past the table. */
 const tiku_doc_block_t *tiku_doc_block(const tiku_doc_t *d, int i);
+/** @brief Heading level 1 through 6, or zero for another block or NULL. */
+int tiku_doc_heading_level(const tiku_doc_block_t *block);
 /** @brief Run @p i, or NULL past the table. */
 const tiku_doc_run_t   *tiku_doc_run(const tiku_doc_t *d, int i);
 /** @brief Line @p i, or NULL past the table. */

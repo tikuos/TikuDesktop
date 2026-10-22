@@ -23,6 +23,115 @@ static void press(tiku_reader_help_window_t *c, unsigned key, unsigned modifiers
     tiku_window_send(c->window, &e);
 }
 
+/** @brief Drag-select styled glyphs at their measured positions and copy them. */
+static void styled_selection(tiku_reader_help_window_t *c, const char *root,
+                               tiku_workspace_t *workspace)
+{
+    fixture(root,"styled.html","<h1>Styled text</h1>"
+        "<p style='font-family:serif;font-size:14px;font-weight:bold;"
+        "text-align:center;line-height:40px'>ABCDEFGHIJKL</p>"
+        "<p style='font-family:monospace;font-size:15px;font-style:italic;"
+        "text-align:right;line-height:2'>MNOPQRSTUVWX</p>"
+        "<table><tr><td>First column</td><td style='font-family:serif;font-size:14px;padding:6px'>"
+        "YZabcdefghij</td></tr></table>");
+    assert(tiku_reader_help_window_go(c,"styled.html") == TIKU_READER_HELP_PAGE);
+    c->reader->side = 0; tiku_workspace_draw(workspace);
+    int selected = 0;
+    for (int i = 0; i < c->doc->npiece; i++) {
+        const tiku_doc_piece_t *pc = &c->doc->piece[i];
+        const char *text = c->doc->text+pc->off;
+        if (strncmp(text,"ABCDEFGHIJKL",12) && strncmp(text,"MNOPQRSTUVWX",12) &&
+            strncmp(text,"YZabcdefghij",12)) continue;
+        assert(pc->len == 12);
+        const tiku_doc_run_t *run = &c->doc->run[pc->run];
+        char prefix[13]; memcpy(prefix,text,12); prefix[12] = 0;
+        prefix[3] = 0; int from = tiku_measure_width(run->face,prefix);
+        memcpy(prefix,text,12); prefix[7] = 0;
+        int to = tiku_measure_width(run->face,prefix);
+        tiku_rect_t box = tiku_doc_piece_rect(c->doc,i);
+        help_layout_t l = tiku_reader_layout(c,tiku_window_content(c->window));
+        tiku_event_t drag = {.type=TIKU_EVENT_POINTER_DOWN,.button=1,
+            .x=l.page.x+box.x+from,.y=l.page.y+box.y-c->bar.value+box.h/2};
+        tiku_window_send(c->window,&drag);
+        drag.type = TIKU_EVENT_POINTER_MOVE; drag.x = l.page.x+box.x+to;
+        tiku_window_send(c->window,&drag);
+        drag.type = TIKU_EVENT_POINTER_UP; tiku_window_send(c->window,&drag);
+        press(c,'c',TIKU_MOD_CMD);
+        char expected[5]; memcpy(expected,text+3,4); expected[4] = 0;
+        assert(!strcmp(tiku_clipboard_text(),expected));
+        selected++;
+    }
+    assert(selected == 3);
+}
+
+/** @brief Decode bounded embedded PNGs through Reader's resource callbacks. */
+static void embedded_images(tiku_reader_help_window_t *c, const char *root,
+                               tiku_workspace_t *workspace)
+{
+    const char *data = "iVBORw0KGgoAAAANSUhEUgAAABQAAAAICAYAAAD5nd/tAAAAFklEQVR4nGM4wSXyn5qYYdTAUQNJxwCGyS8wuJRVjAAAAABJRU5ErkJggg==";
+    char html[512];
+    snprintf(html,sizeof html,"<figure><img src='data:image/png;base64,%s' width='40' alt='Embedded alternate'>"
+             "<figcaption>Embedded caption</figcaption></figure>",data);
+    fixture(root,"embedded.html",html);
+    assert(tiku_reader_help_window_go(c,"embedded.html") == TIKU_READER_HELP_PAGE);
+    tiku_workspace_draw(workspace);
+    assert(c->reader->nimages == 1 && decoded(c->reader,0));
+    assert(c->doc->image[0].w == 40 && c->doc->image[0].h == 16);
+    assert(strstr(c->reader->text,"Embedded caption"));
+    char *large = malloc(9000); assert(large);
+    int n = sprintf(large,"<img src='data:image/png;base64,");
+    memset(large+n,' ',5000); n += 5000;
+    snprintf(large+n,9000-(size_t)n,"%s' alt='Long embedded'>",data);
+    fixture(root,"embedded-large.html",large); free(large);
+    assert(tiku_reader_help_window_go(c,"embedded-large.html") == TIKU_READER_HELP_PAGE);
+    tiku_workspace_draw(workspace);
+    assert(c->reader->nimages == 1 && decoded(c->reader,0));
+    fixture(root,"embedded-refused.html","<img src='data:image/svg+xml;base64,AAAA' alt='Refused alternate'>");
+    assert(tiku_reader_help_window_go(c,"embedded-refused.html") == TIKU_READER_HELP_PAGE);
+    tiku_workspace_draw(workspace);
+    assert(c->reader->nimages == 1 && c->reader->images[0].failed &&
+           !c->reader->images[0].image.px && strstr(c->reader->text,"Refused alternate"));
+    fixture(root,"embedded-alpha.html","<img src='data:image/png;base64,"
+        "iVBORw0KGgoAAAANSUhEUgAAABQAAAAICAYAAAD5nd/tAAAAFklEQVR4nGM4wSXSQE3MMGrgqIGkYwCCfd/BjkfrbgAAAABJRU5ErkJggg=='>");
+    assert(tiku_reader_help_window_go(c,"embedded-alpha.html") == TIKU_READER_HELP_PAGE);
+    tiku_workspace_draw(workspace);
+    tiku_surface_t *probe = tiku_surface_new(50,30,0);assert(probe);
+    assert(!tiku_surface_rescale(probe,2,0));
+    tiku_fill(probe,(tiku_rect_t){7,7,20,8},0x204060);
+    tiku_surface_t *previous = c->reader->surface;c->reader->surface = probe;
+    tiku_reader_image_draw(c,c->doc->text+c->doc->image[0].src,(tiku_rect_t){7,7,20,8});
+    assert((probe->px[14*100+14] & 0xffffffu) == 0x742439);
+    c->reader->surface = previous;tiku_surface_free(probe);
+}
+
+/** @brief Exercise the richer fixture through local Help and generated reports. */
+static void showcase(tiku_reader_help_window_t *c, const char *root,
+                         tiku_workspace_t *workspace)
+{
+    FILE *f = fopen("tests/fixtures/html/showcase.html","rb");assert(f);
+    assert(!fseek(f,0,SEEK_END));long n = ftell(f);assert(n > 0 && n < 16384);
+    rewind(f);char *html = malloc((size_t)n+1);assert(html);
+    assert(fread(html,1,(size_t)n,f) == (size_t)n);html[n] = 0;fclose(f);
+    fixture(root,"showcase.html",html);
+    assert(tiku_reader_help_window_go(c,"showcase.html") == TIKU_READER_HELP_PAGE);
+    tiku_workspace_draw(workspace);
+    assert(strstr(c->reader->text,"TAIL_SHOWCASE") && !strstr(c->reader->text,"HIDDEN_DRAFT"));
+    assert(c->reader->nimages == 2 && c->reader->images[0].embedded);
+    int image_block = c->doc->image[0].block;
+    tiku_scroll_to(&c->bar,c->doc->block[image_block].y);tiku_workspace_draw(workspace);
+    assert(decoded(c->reader,0));
+    assert(tiku_reader_help_window_find(c,"TAIL_SHOWCASE",0));
+    assert(tiku_reader_help_window_go(c,"#detail") == TIKU_READER_HELP_ANCHOR);
+    c->reader->block = -1;
+    for (int i = 0; i < c->doc->nblock; i++)
+        if (c->doc->block[i].kind == TIKU_DOC_BLOCK_PRE) c->reader->block = i;
+    assert(tiku_reader_help_window_copy(c,1) && strstr(tiku_clipboard_text(),"renderer.sample()"));
+    assert(tiku_reader_help_window_html(c,"Styled report",html));free(html);
+    tiku_workspace_draw(workspace);
+    assert(strstr(c->reader->text,"Styled report") && strstr(c->reader->text,"TAIL_SHOWCASE") &&
+           !strstr(c->reader->text,"HIDDEN_DRAFT") && tiku_doc_check(c->doc));
+}
+
 static void markdown(tiku_reader_help_window_t *c, const char *root, tiku_workspace_t *workspace)
 {
     setenv("TIKU_LANG", "en", 1);
@@ -195,6 +304,25 @@ int main(void)
     tiku_workspace_draw(workspace);
     assert(c.reader->nrows <= 1 && !strcmp(c.page, "few.html"));
 
+    fixture(root, "headings.html", "<H1>One</H1><H2>Two</H2><H3>Three</H3>"
+            "<H4 ID='four'>Four</H4><H5>Five</H5><H6>Six</H6><H4>Sibling</H4>");
+    assert(tiku_reader_help_window_go(&c, "headings.html") == TIKU_READER_HELP_PAGE);
+    c.reader->side = 1; tiku_workspace_draw(workspace);
+    tiku_reader_outline(&c);
+    assert(c.reader->nrows == 7);
+    for (int i = 0; i < 6; i++) assert(c.reader->rows[i].level == i + 1);
+    assert(c.reader->rows[3].children && !c.reader->rows[5].children);
+    c.reader->folded[3] = 1;
+    tiku_reader_outline(&c);
+    assert(c.reader->nrows == 5 && !strcmp(c.reader->rows[4].title, "Sibling"));
+    c.reader->folded[3] = 0;
+    tiku_reader_outline(&c);
+    assert(tiku_reader_help_window_find(&c, "Six", 0));
+    assert(tiku_reader_help_window_go(&c, "#four") == TIKU_READER_HELP_ANCHOR);
+
+    styled_selection(&c,root,workspace);
+    embedded_images(&c,root,workspace);
+    showcase(&c,root,workspace);
     c.window->frame.w = 820; c.reader->side = 1; tiku_workspace_draw(workspace);
     assert(!tiku_surface_png(surface, "/tmp/tiku-help-reader.png"));
     tiku_reader_help_window_destroy(&c);

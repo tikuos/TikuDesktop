@@ -64,7 +64,9 @@ static void tables_and_limits(void)
 {
     convert("| Name | Value |\n| :--- | ---: |\n| **clock** | 64 |\n| a\\|b | x |\n");
     assert(strstr(html, "<th>Name</th><th>Value</th>"));
-    assert(strstr(html, "<td>a|b</td>") && doc.nblock == 6);
+    int cells = 0;
+    for (int i = 0; i < doc.nblock; i++) cells += doc.block[i].kind == TIKU_DOC_BLOCK_CELL;
+    assert(strstr(html, "<td>a|b</td>") && cells == 6);
     char small[16]; memset(small, 42, sizeof small);
     assert(!tiku_markdown_html(small, 8, "**too much output**"));
     assert(!small[0] && small[8] == 42);

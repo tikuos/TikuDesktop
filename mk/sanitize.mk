@@ -23,7 +23,7 @@ SAN_SRCS := $(filter-out %/tiku_pdf_view.c,$(filter \
                      %/tiku_vector_raster.c kits/translation/tiku_circuit%.c \
                      %/tiku_inflate_stream.c kits/translation/tiku_archive%.c \
                      %/tiku_diff.c %/tiku_icons.c \
-                     %/tiku_jpeg.c %/tiku_image.c %/tiku_fax.c %/tiku_fontdir.c \
+                     %/tiku_jpeg.c %/tiku_image.c %/tiku_image_data.c %/tiku_fax.c %/tiku_fontdir.c \
                      kits/translation/tiku_jbig2%.c %/tiku_mq.c \
                      kits/translation/tiku_jpx%.c \
                      kits/translation/tiku_office%.c %/tiku_xml.c \
@@ -181,11 +181,23 @@ $(SAN)/test_circuit_faults: $(SAN)/tests/kits/test_circuit_faults.o \
 # Reader's controllers and document parser are instrumented too; the image
 # decoder is in the kit objects every test links.
 SAN_READER_KIT_SRCS := kits/interface/tiku_doc.c \
+                       kits/interface/tiku_html_document.c \
+                       kits/interface/tiku_html_text.c kits/interface/tiku_html_view.c \
+                       kits/interface/tiku_html_view_paint.c kits/interface/tiku_html_view_event.c \
                        kits/interface/tiku_doc_paint.c \
+                       kits/interface/tiku_font.c \
+                       kits/interface/tiku_measure_font.c \
                        kits/interface/tiku_markdown.c
 SAN_READER_KIT_OBJS := $(patsubst %.c,$(SAN)/%.o,$(SAN_READER_KIT_SRCS))
 SAN_READER_OBJS := $(patsubst %.c,$(SAN)/%.o,$(READER_CORE_SRC))
 SAN_MARKER_OBJS := $(patsubst %.c,$(SAN)/%.o,$(MARKER_SRC))
+HTML_SAN_TESTS := test_doc_html test_doc_css test_doc_fonts test_doc_flow \
+                  test_doc_boxes test_doc_images test_image_data test_doc_tables test_html_view
+SAN_TESTS += $(HTML_SAN_TESTS)
+SAN_LEAK_TESTS += $(HTML_SAN_TESTS)
+$(addprefix $(SAN)/,$(HTML_SAN_TESTS)): $(SAN)/%: $(SAN)/tests/kits/%.o \
+        $(SAN_READER_KIT_OBJS) $(SAN_OBJS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm
 $(SAN)/test_marker: $(SAN_MARKER_OBJS)
 $(addprefix $(SAN)/,$(SAN_READER_TESTS)): $(SAN)/test_%: \
         $(SAN)/tests/apps/test_%.o $(SAN_READER_OBJS) $(SAN_READER_KIT_OBJS) \

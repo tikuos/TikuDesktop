@@ -5,10 +5,6 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "tiku_reader_private.h"
 
-static int reader_width(int face, const char *text, int n);
-static void reader_range(tiku_reader_help_window_t *c, tiku_surface_t *s,
-                         int piece, tiku_rect_t box, int a, int b, int active);
-static void reader_mark(void *ctx, tiku_surface_t *s, int piece, tiku_rect_t box);
 static int reader_offset(tiku_reader_help_window_t *c, int x, int y);
 static void reader_tools_draw(tiku_reader_help_window_t *c, tiku_surface_t *s, help_layout_t l);
 static int reader_row_live(const tiku_reader_help_window_t *c, int row);
@@ -57,7 +53,7 @@ void tiku_reader_draw(tiku_window_t *window, tiku_surface_t *s,
         const char *what = NULL;
         char cut[128];
         int cap = 0;
-        tiku_doc_paint_t how;
+        tiku_doc_paint_t how = {0};
 
         cut[0] = 0;
         if (c->oversize) {
@@ -81,7 +77,18 @@ void tiku_reader_draw(tiku_window_t *window, tiku_surface_t *s,
             l.page.y < s->clip.y+s->clip.h &&
             l.page.x+l.page.w > s->clip.x &&
             l.page.y+l.page.h > s->clip.y)
-            tiku_doc_draw_marked(s, c->doc, l.page, &how, reader_mark, c);
+        {
+            struct help_reader *r = c->reader;
+            if (r) {
+                tiku_html_view_t *v = &r->html;
+                tiku_html_view_bind(v,c->doc,r->text,r->length,r->starts);
+                v->viewport = l.page;v->scroll = c->bar.value;v->a = r->a;v->b = r->b;
+                v->focus_link = how.focus_link;v->paint = how;
+                v->match = r->match;v->match_len = r->match_len;v->matches = r->matches;
+                snprintf(v->query,sizeof v->query,"%s",r->query.text);
+                tiku_html_view_draw(v,s,l.page);
+            } else tiku_doc_draw(s,c->doc,l.page,&how);
+        }
         tiku_reader_font_end(font);
         if (tiku_scroll_max(&c->bar) > 0 && tiku_doc_height(c->doc) > 0) {
             pos = (float)c->bar.value / (float)tiku_scroll_max(&c->bar);
@@ -97,83 +104,12 @@ void tiku_reader_draw(tiku_window_t *window, tiku_surface_t *s,
     if (c->document_mode) tiku_reader_document_tip(c, s, content);
 }
 
-/** @brief The width in face @p face of the first @p n bytes of @p text,
- *         cut to TIKU_TEXT_LINE_MAX.
- *  @note @p n is at a UTF-8 character boundary. */
-static int reader_width(int face, const char *text, int n)
-{
-    char part[TIKU_TEXT_LINE_MAX];
-    if (n < 0) n = 0;
-    if (n >= (int)sizeof part) n = sizeof part - 1;
-    memcpy(part, text, n); part[n] = 0;
-    return tiku_measure_width(face, part);
-}
-
-/** @brief Highlight the flattened-text range from @p a to @p b where it
- *         falls in @p piece, framed when @p active. */
-static void reader_range(tiku_reader_help_window_t *c, tiku_surface_t *s,
-                         int piece, tiku_rect_t box, int a, int b, int active)
-{
-    struct help_reader *r = c->reader; const tiku_doc_piece_t *pc = &c->doc->piece[piece];
-    const tiku_doc_run_t *run = &c->doc->run[pc->run];
-    int start = r->starts[pc->run] + pc->off - run->off;
-    if (a < start) a = start;
-    if (b > start + pc->len) b = start + pc->len;
-    if (a >= b) return;
-    const char *text = c->doc->text + pc->off;
-    int x = reader_width(run->face, text, a-start), end = reader_width(run->face, text, b-start);
-    box.x += x; box.w = end-x;
-    tiku_fill(s, box, tiku_tint(TIKU_C_NOTE, TIKU_LIGHTEN_2));
-    if (active) tiku_frame(s, box, TIKU_C_FOCUS);
-}
-
-/** @brief A painted piece's highlights: every Find match that touches it,
- *         the current one framed, then the selection over them. */
-static void reader_mark(void *ctx, tiku_surface_t *s, int piece, tiku_rect_t box)
-{
-    tiku_reader_help_window_t *c = ctx; struct help_reader *r = c->reader;
-    if (!r) return;
-    const tiku_doc_piece_t *pc = &c->doc->piece[piece];
-    int start = r->starts[pc->run] + pc->off - c->doc->run[pc->run].off;
-    if (r->match_len && r->matches) {
-        int from = start-r->match_len+1; if (from < 0) from = 0;
-        for (int i = from; i < start+pc->len && i+r->match_len <= r->length; i++)
-            if (tiku_reader_match(r->text+i, r->query.text))
-                reader_range(c, s, piece, box, i, i+r->match_len, i == r->match);
-    }
-    reader_range(c, s, piece, box, r->a < r->b ? r->a : r->b,
-                 r->a < r->b ? r->b : r->a, 1);
-}
-
-/** @brief The flattened-text offset at (@p x, @p y) of the page, measured
- *         with the widths the highlight uses; its line's block becomes the
- *         selected one.  @return -1 between lines. */
-static int reader_offset_at_size(tiku_reader_help_window_t *c, int x, int y)
-{
-    struct help_reader *r = c->reader;
-    int line = tiku_doc_line_at(c->doc, y);
-    if (line < 0) return y <= 0 ? 0 : y >= c->doc->height ? r->length : -1;
-    const tiku_doc_line_t *ln = &c->doc->line[line];
-    for (int i = ln->piece0; i < ln->piece0+ln->npiece; i++) {
-        const tiku_doc_piece_t *pc = &c->doc->piece[i];
-        const tiku_doc_run_t *run = &c->doc->run[pc->run];
-        const char *text = c->doc->text+pc->off;
-        int at = r->starts[pc->run] + pc->off - run->off;
-        if (x > ln->x+pc->x+pc->w && i+1 < ln->piece0+ln->npiece) continue;
-        int n = 0;
-        while (n < pc->len && reader_width(run->face, text, n) < x-ln->x-pc->x) {
-            n++; while (n < pc->len && ((unsigned char)text[n] & 0xc0) == 0x80) n++;
-        }
-        r->block = ln->block; return at+n;
-    }
-    return -1;
-}
-
 /** @brief The text offset at (@p x, @p y), measured at the page's size. */
 static int reader_offset(tiku_reader_help_window_t *c, int x, int y)
 {
     int font = tiku_reader_font_begin(c);
-    int offset = reader_offset_at_size(c, x, y);
+    int offset = tiku_html_text_offset(c->doc,c->reader->starts,c->reader->length,
+                                       x,y,&c->reader->block);
     tiku_reader_font_end(font);
     return offset;
 }

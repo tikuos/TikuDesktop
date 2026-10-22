@@ -38,8 +38,9 @@ typedef enum {
     TIKU_IMG_OK = 0,
     TIKU_IMG_NOT_IMAGE,         /* not a recognised format           */
     TIKU_IMG_UNSUPPORTED,       /* recognised, a variant not decoded */
-    TIKU_IMG_BAD                /* malformed, too big, unreadable or
+    TIKU_IMG_BAD,               /* malformed, too big, unreadable or
                                    out of memory                     */
+    TIKU_IMG_NO_MEMORY          /* embedded PNG allocation failure   */
 } tiku_image_err_t;
 
 /**
@@ -71,6 +72,17 @@ tiku_image_err_t tiku_image_load(const char *path,
  */
 tiku_image_err_t tiku_image_decode(const void *bytes, size_t len,
                                   tiku_image_t *out);
+
+/** @brief Encoded data-URI budget, including its MIME prefix and whitespace. */
+#define TIKU_IMAGE_DATA_URI_MAX (1024u * 1024u)
+/** @brief Pixel budget for embedded PNG resources. */
+#define TIKU_IMAGE_DATA_PIXELS_MAX (1024u * 1024u)
+/** @brief Validate a bounded base64 PNG URI and read its dimensions without allocation.
+ *  @return 1 with dimensions at most 2048 each and within the pixel budget; 0 otherwise. */
+int tiku_image_data_png_size(const char *uri, size_t length, int *w, int *h);
+/** @brief Decode a base64 PNG URI within its encoded, dimension and pixel budgets.
+ *  @return An image status; failure leaves @p out untouched. */
+tiku_image_err_t tiku_image_data_png(const char *uri, size_t length, tiku_image_t *out);
 
 /** @brief Free @p im's pixels and empty it; NULL is ignored. */
 void tiku_image_free(tiku_image_t *im);

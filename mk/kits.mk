@@ -101,6 +101,9 @@ INTERFACE   := $(K)/interface/tiku_gfx.c $(K)/interface/tiku_theme.c \
                $(K)/interface/tiku_textview.c $(K)/interface/tiku_alert.c \
                $(K)/interface/tiku_syntax.c $(K)/interface/tiku_list.c \
                $(K)/interface/tiku_doc.c $(K)/interface/tiku_doc_paint.c \
+               $(K)/interface/tiku_html_document.c \
+               $(K)/interface/tiku_html_text.c $(K)/interface/tiku_html_view.c \
+               $(K)/interface/tiku_html_view_paint.c $(K)/interface/tiku_html_view_event.c \
                $(K)/interface/tiku_markdown.c \
                $(K)/interface/tiku_splash.c \
                $(K)/interface/tiku_layout.c $(K)/interface/tiku_form.c \
@@ -172,6 +175,7 @@ TRANSLATION := $(K)/translation/tiku_inflate.c \
                $(K)/translation/tiku_jpx_dwt.c \
                $(K)/translation/tiku_jpx_jp2.c \
                $(K)/translation/tiku_hvif.c $(K)/translation/tiku_image.c \
+               $(K)/translation/tiku_image_data.c \
                $(K)/translation/tiku_thumb.c $(K)/translation/tiku_iconpaint.c \
                $(K)/translation/tiku_icons.c \
                $(K)/translation/tiku_icons_tiku.c \

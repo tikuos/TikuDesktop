@@ -12,8 +12,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "tiku_markdown.h"
+#include "tiku_html_document.h"
 
-static int reader_parse(tiku_doc_t *doc, const char *name, const char *source);
+static int reader_parse(tiku_doc_t *doc, const char *source, void *ctx);
 
 /** @brief The allocator in force: the C library's unless a test set one. */
 static tiku_reader_allocator_t hooks = { malloc, calloc };
@@ -47,8 +48,9 @@ int tiku_reader_markdown(const char *name)
 /** @brief Parse @p source into @p doc, Markdown converted to HTML first
  *         within TIKU_READER_MEMORY_MAX.  The page and the folder search
  *         both parse through here.  @return 1, or 0 when it failed. */
-static int reader_parse(tiku_doc_t *doc, const char *name, const char *source)
+static int reader_parse(tiku_doc_t *doc, const char *source, void *ctx)
 {
+    const char *name = ctx;
     if (!tiku_reader_markdown(name)) { tiku_doc_read(doc, source); return 1; }
     size_t cap = tiku_markdown_html_size(source);
     if (!cap || cap > TIKU_READER_MEMORY_MAX) return 0;
@@ -59,118 +61,37 @@ static int reader_parse(tiku_doc_t *doc, const char *name, const char *source)
     free(html); return ok;
 }
 
-void tiku_reader_doc_free(tiku_doc_t *doc)
+/** @brief Model options shared by loading, searching and reflow. */
+static tiku_html_options_t reader_options(const char *name)
 {
-    if (doc) free(doc->storage);
-    free(doc);
+    return (tiku_html_options_t){
+        .source_bytes=TIKU_READER_MEMORY_MAX, .memory_bytes=TIKU_READER_MEMORY_MAX,
+        .allocate=tiku_reader_malloc, .zero=tiku_reader_calloc, .release=free,
+        .parse=reader_parse, .parse_ctx=(void *)name
+    };
 }
 
-/** @brief Parse @p source into a new page, its tables sized from its
- *         length; each table that fills is doubled and the parse run
- *         again, for at most 16 passes.  @p layout lays it out at a nominal
- *         width too.  @return the page, or NULL. */
-static tiku_doc_t *reader_document(const char *name, const char *source,
-                                   int layout)
+void tiku_reader_doc_free(tiku_doc_t *doc)
 {
-    size_t n = strlen(source);
-    tiku_doc_limits_t l = {
-        (int)(n * 2 + 4096), (int)(n / 64 + 256),
-        (int)(n / 32 + 1024), (int)(n / 32 + 1024),
-        (int)(n / 16 + 2048), (int)(n / 128 + 256),
-        (int)(n / 256 + 64), (int)(n / 1024 + 32)
-    };
-    tiku_doc_t *doc = tiku_reader_calloc(1, sizeof *doc);
-    if (!doc) return NULL;
-    tiku_doc_init(doc);
-    /* A small document is tried first in the kit's inline buffers. */
-    int small = n < TIKU_DOC_TEXT_MAX / 2;
-    for (int pass = 0; pass < 16; pass++) {
-        if (!small) {
-            size_t size = tiku_doc_storage_size(&l);
-            if (!size || size > TIKU_READER_MEMORY_MAX) break;
-            void *memory = tiku_reader_malloc(size);
-            if (!memory) break;
-            free(doc->storage);
-            if (!tiku_doc_init_storage(doc, &l, memory, size)) {
-                free(memory); doc->storage = NULL; break;
-            }
-        }
-        if (!reader_parse(doc, name, source)) break;
-        if (layout) (void)tiku_doc_layout(doc, 256);
-        unsigned full = doc->full & (TIKU_DOC_FULL_TEXT | TIKU_DOC_FULL_BLOCKS |
-            TIKU_DOC_FULL_RUNS | TIKU_DOC_FULL_LINKS | TIKU_DOC_FULL_ANCHORS |
-            TIKU_DOC_FULL_IMAGES | TIKU_DOC_FULL_LINES | TIKU_DOC_FULL_PIECES);
-        if (!full) { doc->laid_width = TIKU_DOC_NONE; return doc; }
-        if (small) { small = 0; continue; }
-        if (full & TIKU_DOC_FULL_TEXT) l.text *= 2;
-        if (full & TIKU_DOC_FULL_BLOCKS) l.blocks *= 2;
-        if (full & TIKU_DOC_FULL_RUNS) l.runs *= 2;
-        if (full & TIKU_DOC_FULL_LINKS) l.links *= 2;
-        if (full & TIKU_DOC_FULL_ANCHORS) l.anchors *= 2;
-        if (full & TIKU_DOC_FULL_IMAGES) l.images *= 2;
-        if (full & TIKU_DOC_FULL_LINES) l.lines *= 2;
-        if (full & TIKU_DOC_FULL_PIECES) l.pieces *= 2;
-    }
-    tiku_reader_doc_free(doc);
-    return NULL;
+    tiku_html_document_free(doc,NULL);
 }
 
 tiku_doc_t *tiku_reader_document(const char *name, const char *source)
 {
-    return reader_document(name, source, 1);
+    tiku_html_options_t options = reader_options(name);
+    return tiku_html_document_load(source,256,&options);
 }
 
 tiku_doc_t *tiku_reader_document_text(const char *name, const char *source)
 {
-    return reader_document(name, source, 0);
-}
-
-/** @brief A copy of @p old's text, blocks, runs, links, anchors and images
- *         in new storage, with twice the room in each of its line and
- *         piece tables that the last layout filled; @p old is unchanged.
- *  @return the copy, or NULL. */
-static tiku_doc_t *reader_grow_layout(const tiku_doc_t *old)
-{
-    tiku_doc_limits_t limits = old->limits;
-    if (old->full & TIKU_DOC_FULL_LINES) limits.lines *= 2;
-    if (old->full & TIKU_DOC_FULL_PIECES) limits.pieces *= 2;
-    size_t bytes = tiku_doc_storage_size(&limits);
-    if (!bytes || bytes > TIKU_READER_MEMORY_MAX) return NULL;
-    tiku_doc_t *doc = tiku_reader_calloc(1, sizeof *doc);
-    void *storage = tiku_reader_malloc(bytes);
-    if (!doc || !storage ||
-        !tiku_doc_init_storage(doc, &limits, storage, bytes)) {
-        free(doc); free(storage); return NULL;
-    }
-    /* Runs, headings, links and the selection are named by index into
-     * these tables, and the copy keeps every index. */
-#define COPY_TABLE(member, count) do { \
-    doc->count = old->count; \
-    memcpy(doc->member, old->member, \
-           (size_t)old->count * sizeof *old->member); \
-} while (0)
-    COPY_TABLE(text, ntext); COPY_TABLE(block, nblock); COPY_TABLE(run, nrun);
-    COPY_TABLE(link, nlink); COPY_TABLE(anchor, nanchor);
-    COPY_TABLE(image, nimage);
-#undef COPY_TABLE
-    doc->title = old->title;
-    doc->full = old->full;
-    doc->image_fn = old->image_fn; doc->image_ctx = old->image_ctx;
-    return doc;
+    tiku_html_options_t options = reader_options(name);
+    return tiku_html_document_load(source,0,&options);
 }
 
 void tiku_reader_document_layout(tiku_doc_t **current, int width)
 {
-    for (;;) {
-        tiku_doc_t *doc = *current;
-        (void)tiku_doc_layout(doc, width);
-        if (!(doc->full & (TIKU_DOC_FULL_LINES | TIKU_DOC_FULL_PIECES))) return;
-        tiku_doc_t *grown = reader_grow_layout(doc);
-        /* Without room to grow, the page keeps its capacity notice. */
-        if (!grown) return;
-        *current = grown;
-        tiku_reader_doc_free(doc);
-    }
+    tiku_html_options_t options = reader_options(NULL);
+    (void)tiku_html_document_reflow(current,width,&options);
 }
 
 char *tiku_reader_source(const char *path, const char **why)

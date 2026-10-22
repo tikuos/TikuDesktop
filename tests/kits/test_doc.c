@@ -747,8 +747,15 @@ main(void)
                       "</tr><tr><td>a</td><td>b</td></tr></table>");
         tiku_doc_layout(&doc, 300);
         {
-            tiku_rect_t wide = tiku_doc_block_rect(&doc, 0);
-            tiku_rect_t right = tiku_doc_block_rect(&doc, 2);
+            int wide_cell = TIKU_DOC_NONE, right_cell = TIKU_DOC_NONE;
+            for (int i = 0; i < doc.nblock; i++) {
+                const tiku_doc_block_t *b = &doc.block[i];
+                if (b->kind != TIKU_DOC_BLOCK_CELL) continue;
+                if (b->index == 0 && b->span == 2) wide_cell = i;
+                if (b->index == 1 && b->col == 1) right_cell = i;
+            }
+            tiku_rect_t wide = tiku_doc_block_rect(&doc, wide_cell);
+            tiku_rect_t right = tiku_doc_block_rect(&doc, right_cell);
 
             check(wide.y < right.y && right.x > 0,
                   "a cell over two columns is a row of its own, and the "

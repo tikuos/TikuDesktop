@@ -18,11 +18,26 @@
 static const tiku_font_t *
 face_of(int face)
 {
-    switch (face) {
-    case TIKU_MEASURE_BOLD: return tiku_font_bold();
-    case TIKU_MEASURE_MONO: return tiku_font_mono(0);
-    default:                return face >= 10 ? tiku_font_at(face) : tiku_font_plain();
+    return tiku_font_for_measure(face);
+}
+
+int tiku_measure_font_size(void) { return tiku_font_size(); }
+unsigned tiku_measure_font_stamp(void) { return tiku_font_generation(); }
+
+int tiku_measure_font_face(int family, int pixels, unsigned cut)
+{
+    if (family < 0 || family > TIKU_MEASURE_FAMILY_MONO) family = 0;
+    cut &= TIKU_MEASURE_FONT_BOLD | TIKU_MEASURE_FONT_ITALIC;
+    int smallest = family == TIKU_MEASURE_FAMILY_MONO ? 9 : 10;
+    int largest = family == TIKU_MEASURE_FAMILY_MONO ? 23 : 16;
+    int chosen = smallest;
+    for (int size = smallest; size <= largest; size += 2) {
+        if (size <= pixels && size > chosen) chosen = size;
+        if (size*2 <= pixels && size*2 > chosen) chosen = size*2;
     }
+    pixels = chosen;
+    if (family != TIKU_MEASURE_FAMILY_MONO) cut &= ~TIKU_MEASURE_FONT_ITALIC;
+    return TIKU_MEASURE_FONT_BASE | (family << 10) | (int)(cut << 8) | pixels;
 }
 
 int tiku_measure_heading(int level)

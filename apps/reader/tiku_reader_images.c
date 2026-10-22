@@ -1,4 +1,4 @@
-/* tiku_reader_images.c -- a page's local images: their sizes read from the
+/* tiku_reader_images.c -- local and embedded PNG image resources: sizes read from the
  * file's header, their pixels decoded when drawn, within a budget that lets
  * go of the least recently drawn.
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
@@ -53,10 +53,14 @@ static int reader_image_index(tiku_reader_help_window_t *c, const char *src)
 {
     struct help_reader *r = c->reader; if (!r) return -1;
     for (int i = 0; i < r->nimages; i++) if (!strcmp(r->images[i].src, src)) return i;
-    if (strlen(src) >= sizeof r->images[0].src) return -1;
+    size_t length = strnlen(src,HELP_IMAGE_METADATA);
+    if (length == HELP_IMAGE_METADATA || length+1+r->image_sources+
+        (size_t)r->image_cap*sizeof *r->images > HELP_IMAGE_METADATA) return -1;
     if (r->nimages == r->image_cap) {
         int cap = r->image_cap ? r->image_cap * 2 : 16;
-        if ((size_t)cap * sizeof *r->images > HELP_IMAGE_METADATA) return -1;
+        if ((size_t)cap*sizeof *r->images+r->image_sources+length+1 > HELP_IMAGE_METADATA)
+            cap = r->nimages+1;
+        if ((size_t)cap*sizeof *r->images+r->image_sources+length+1 > HELP_IMAGE_METADATA) return -1;
         help_image_t *images = realloc(r->images,
                                        (size_t)cap * sizeof *images);
         if (!images) return -1;
@@ -64,10 +68,15 @@ static int reader_image_index(tiku_reader_help_window_t *c, const char *src)
                (size_t)(cap - r->image_cap) * sizeof *images);
         r->images = images; r->image_cap = cap;
     }
-    int i = r->nimages++; strcpy(r->images[i].src, src);
+    char *reference = malloc(length+1); if (!reference) return -1;
+    memcpy(reference,src,length+1);
+    int i = r->nimages++; r->images[i].src = reference; r->image_sources += length+1;
     help_image_t *im = &r->images[i];
-    im->failed = !tiku_reader_path(c, src, im->path, sizeof im->path) ||
-        !reader_image_allowed(im->path, &im->width, &im->height);
+    im->embedded = !strncasecmp(src,"data:",5);
+    if (im->embedded)
+        im->failed = !tiku_image_data_png_size(src,length,&im->width,&im->height);
+    else im->failed = !tiku_reader_path(c,src,im->path,sizeof im->path) ||
+        !reader_image_allowed(im->path,&im->width,&im->height);
     return i;
 }
 
@@ -101,16 +110,18 @@ static tiku_image_t *reader_image_pixels(tiku_reader_help_window_t *c, int i)
         /* An evicted image may have changed on disk since layout: its
          * confinement and size are checked again before its pixels are
          * loaded. */
-        if (!tiku_reader_path(c, entry->src, path, sizeof path) ||
+        if (!entry->embedded && (!tiku_reader_path(c, entry->src, path, sizeof path) ||
             !reader_image_allowed(path, &width, &height) ||
-            width != entry->width || height != entry->height) {
+            width != entry->width || height != entry->height)) {
             entry->failed = 1; return NULL;
         }
         size_t bytes = (size_t)entry->width * entry->height *
                        sizeof(uint32_t);
         reader_image_room(r, bytes);
         tiku_image_t im = {0};
-        if (tiku_image_load(path, &im) || !im.px ||
+        tiku_image_err_t status = entry->embedded ?
+            tiku_image_data_png(entry->src,strlen(entry->src),&im) : tiku_image_load(path,&im);
+        if (status || !im.px ||
             im.w != entry->width || im.h != entry->height) {
             tiku_image_free(&im); entry->failed = 1; return NULL;
         }
@@ -120,8 +131,7 @@ static tiku_image_t *reader_image_pixels(tiku_reader_help_window_t *c, int i)
     return &entry->image;
 }
 
-/** @brief The size image @p src is laid out at: its own, scaled down to
- *         fit the page's width with its aspect kept, never enlarged.
+/** @brief The image's intrinsic dimensions, before document layout applies sizing.
  *  @return 0 when it cannot be shown. */
 int tiku_reader_image_size(void *ctx, const char *src, int *w, int *h)
 {
@@ -129,9 +139,6 @@ int tiku_reader_image_size(void *ctx, const char *src, int *w, int *h)
     int i = reader_image_index(c, src); if (i < 0) return 0;
     help_image_t *im = &c->reader->images[i]; if (im->failed) return 0;
     *w = im->width; *h = im->height;
-    int max = c->laid_for > 40 ? c->laid_for - 24 : 480;
-    if (*w > max) { *h = (int)((long)*h * max / *w); *w = max; }
-    if (*h < 1) *h = 1;
     return 1;
 }
 
@@ -159,7 +166,9 @@ void tiku_reader_image_draw(void *ctx, const char *src, tiku_rect_t where)
             uint32_t px = im->px[(long)y * im->h / where.h * im->w + (long)x * im->w / where.w];
             unsigned a = px >> 24;
             if (a) {
-                uint32_t bg = TIKU_C_DOC;
+                int scale = r->surface->scale > 0 ? r->surface->scale : 1;
+                size_t stride = (size_t)r->surface->w*scale;
+                uint32_t bg = r->surface->px[(size_t)(where.y+y)*scale*stride+(where.x+x)*scale];
                 unsigned red = (((px >> 16) & 255) * a + ((bg >> 16) & 255) * (255-a)) / 255;
                 unsigned green = (((px >> 8) & 255) * a + ((bg >> 8) & 255) * (255-a)) / 255;
                 unsigned blue = ((px & 255) * a + (bg & 255) * (255-a)) / 255;

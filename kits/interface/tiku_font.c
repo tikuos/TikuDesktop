@@ -15,6 +15,7 @@
 
 #include "tiku_dl.h"
 #include "tiku_font.h"
+#include "tiku_measure.h"
 #include "tiku_font_data.h"
 #include "tiku_ttf.h"
 
@@ -28,6 +29,7 @@ static tiku_font_t current_plain;
 static tiku_font_t current_bold;
 static int current_size;
 static int current_family;
+static unsigned font_generation = 1;
 
 /*
  * A face read from a file.  The baked tables are const and cannot hold
@@ -334,6 +336,7 @@ adopt(int family, int rung)
         plain = plain_faces[family][rung];
         bold = bold_faces[family][rung];
     }
+    if (current_family != family) font_generation++;
     current_plain = *plain;
     current_bold = *bold;
     current_family = family;
@@ -374,6 +377,8 @@ tiku_font_set_family(int family)
     return current_family;
 }
 
+unsigned tiku_font_generation(void) { return font_generation; }
+
 int
 tiku_font_family(void)
 {
@@ -410,6 +415,7 @@ tiku_font_set_files(const char *regular, const char *bold)
     }
     tiku_ttf_close(file_regular);
     tiku_ttf_close(file_bold);
+    font_generation++;
     file_regular = r;
     file_bold = b;
     snprintf(file_family, sizeof file_family, "%s",
@@ -429,6 +435,8 @@ void
 tiku_font_use_baked(void)
 {
     int i;
+
+    if (using_files()) font_generation++;
 
     for (i = 0; i < BUILT_MAX; i++) {
         built_free(&built[i]);
@@ -490,6 +498,36 @@ tiku_font_mono_px(void)
         (void)tiku_font_set_size(12);
     }
     return current_size >= 14 ? 15 : 13;
+}
+
+const tiku_font_t *tiku_font_for_measure(int face)
+{
+    if (face >= TIKU_MEASURE_FONT_BASE && face < TIKU_MEASURE_FONT_BASE+4096) {
+        unsigned family = ((unsigned)face >> 10) & 3u;
+        unsigned cut = ((unsigned)face >> 8) & 3u;
+        int pixels = face & 255;
+        if (family == TIKU_MEASURE_FAMILY_MONO) {
+            int doubled = !(pixels & 1) && pixels >= 18 && pixels <= 46;
+            const tiku_font_t *f = tiku_font_styled(tiku_font_mono_at(
+                                            doubled ? pixels/2 : pixels,0),cut);
+            return doubled && f->hi ? f->hi : f;
+        }
+        (void)tiku_font_size();
+        if (family == TIKU_MEASURE_FAMILY_CURRENT && using_files()) {
+            const tiku_font_t *f = built_face(pixels,cut & 1u);
+            if (f) return f;
+        }
+        int index = family == TIKU_MEASURE_FAMILY_CURRENT ? current_family :
+                    family == TIKU_MEASURE_FAMILY_SERIF ? 1 : 0;
+        int doubled = pixels >= 20;
+        int rung = rung_of(doubled ? pixels/2 : pixels);
+        const tiku_font_t *f = cut & TIKU_FONT_BOLD ? bold_faces[index][rung] :
+                                                   plain_faces[index][rung];
+        return doubled && f->hi ? f->hi : f;
+    }
+    if (face == TIKU_MEASURE_BOLD) return tiku_font_bold();
+    if (face == TIKU_MEASURE_MONO) return tiku_font_mono(0);
+    return face >= 10 ? tiku_font_at(face) : tiku_font_plain();
 }
 
 const tiku_font_t *

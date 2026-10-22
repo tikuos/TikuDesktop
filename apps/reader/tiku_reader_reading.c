@@ -69,6 +69,7 @@ void tiku_reader_init(tiku_reader_help_window_t *c)
 {
     c->reader = calloc(1, sizeof *c->reader);
     if (!c->reader) return;
+    tiku_html_view_init(&c->reader->html,NULL);
     if (!reader_reserve(c->reader, TIKU_DOC_TEXT_MAX * 2u,
                         TIKU_DOC_RUNS_MAX, TIKU_DOC_BLOCKS_MAX)) {
         free(c->reader); c->reader = NULL; return;
@@ -85,27 +86,18 @@ void tiku_reader_init(tiku_reader_help_window_t *c)
 /** @brief Free a page's images and their pixels. */
 void tiku_reader_images_clear(struct help_reader *r)
 {
-    for (int i = 0; i < r->nimages; i++) tiku_image_free(&r->images[i].image);
+    for (int i = 0; i < r->nimages; i++) {
+        tiku_image_free(&r->images[i].image); free(r->images[i].src);
+    }
     free(r->images); r->images = NULL;
-    r->nimages = r->image_cap = 0; r->image_bytes = r->image_clock = 0;
+    r->nimages = r->image_cap = 0; r->image_bytes = r->image_clock = r->image_sources = 0;
 }
 
 /** @brief Flatten @p d's text into @p out, a newline after each block,
  *         and each run's offset into @p starts.  @return the length. */
 int tiku_reader_text(const tiku_doc_t *d, char *out, size_t cap, int *starts)
 {
-    size_t n = 0;
-    for (int i = 0; i < d->nblock; i++) {
-        const tiku_doc_block_t *b = &d->block[i];
-        for (int k = b->run0; k < b->run0 + b->nrun; k++) {
-            const tiku_doc_run_t *run = &d->run[k];
-            if (starts) starts[k] = (int)n;
-            if (n + run->len + 2 >= cap) { out[n] = 0; return (int)n; }
-            memcpy(out + n, d->text + run->off, run->len); n += run->len;
-        }
-        if (n && out[n-1] != '\n' && n + 1 < cap) out[n++] = '\n';
-    }
-    out[n] = 0; return (int)n;
+    return tiku_html_text(d,out,cap,starts);
 }
 
 /** @brief A new page is in: its text flattened, and the selection,
@@ -127,11 +119,7 @@ void tiku_reader_loaded(tiku_reader_help_window_t *c)
  *         either case, every other byte exactly. */
 int tiku_reader_match(const char *text, const char *query)
 {
-    while (*query) {
-        if (!*text || tolower((unsigned char)*text++) !=
-            tolower((unsigned char)*query++)) return 0;
-    }
-    return 1;
+    return tiku_html_text_match(text,query);
 }
 
 /** @brief Scroll the piece holding flattened-text offset @p offset to the

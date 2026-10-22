@@ -263,7 +263,7 @@ void tiku_reader_search(tiku_reader_help_window_t *c)
                     "Choose Stop Search to cancel.");
 }
 
-/** @brief Build the outline from the page's H1 to H3 headings, leaving out
+/** @brief Build the outline from the page's H1 to H6 headings, leaving out
  *         those under a folded heading. */
 void tiku_reader_outline(tiku_reader_help_window_t *c)
 {
@@ -271,16 +271,15 @@ void tiku_reader_outline(tiku_reader_help_window_t *c)
     r->nrows = 0; int hidden = 0;
     for (int i = 0; i < c->doc->nblock && r->nrows < HELP_ROWS; i++) {
         const tiku_doc_block_t *b = &c->doc->block[i];
-        if (b->kind != TIKU_DOC_BLOCK_H1 && b->kind != TIKU_DOC_BLOCK_H2 && b->kind != TIKU_DOC_BLOCK_H3) continue;
-        int level = b->kind == TIKU_DOC_BLOCK_H1 ? 1 : b->kind == TIKU_DOC_BLOCK_H2 ? 2 : 3;
+        int level = tiku_doc_heading_level(b);
+        if (!level) continue;
         if (hidden && level > hidden) continue;
         hidden = r->folded[i] ? level : 0;
         help_row_t *row = &r->rows[r->nrows++]; memset(row, 0, sizeof *row); row->block = i;
         row->level = level;
         for (int j = i+1; j < c->doc->nblock; j++) {
-            int kind = c->doc->block[j].kind;
-            if (kind != TIKU_DOC_BLOCK_H1 && kind != TIKU_DOC_BLOCK_H2 && kind != TIKU_DOC_BLOCK_H3) continue;
-            int child_level = kind == TIKU_DOC_BLOCK_H1 ? 1 : kind == TIKU_DOC_BLOCK_H2 ? 2 : 3;
+            int child_level = tiku_doc_heading_level(&c->doc->block[j]);
+            if (!child_level) continue;
             row->children = child_level > level; break;
         }
         int used = 0;

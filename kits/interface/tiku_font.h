@@ -99,6 +99,8 @@ int tiku_font_set_family(int family);
 
 /** @brief The family in force. */
 int tiku_font_family(void);
+/** @brief Family/source configuration token, unchanged by text size changes. */
+unsigned tiku_font_generation(void);
 
 /** @brief What the family in force is called, baked or dropped in. */
 const char *tiku_font_current_family(void);
@@ -136,6 +138,8 @@ const tiku_font_t *tiku_font_bold(void);
  * title strip; the UI size stays as it is.
  */
 const tiku_font_t *tiku_font_at(int px);
+/** @brief Resolve a measurement face number, including encoded CSS fonts. */
+const tiku_font_t *tiku_font_for_measure(int face);
 
 /**
  * @brief A face whose every glyph advances the same width.
