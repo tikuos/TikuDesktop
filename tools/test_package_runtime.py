@@ -6,6 +6,7 @@
 
 from pathlib import Path
 import os
+import argparse
 import shutil
 import signal
 import subprocess
@@ -14,7 +15,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def main():
+def main(build=ROOT / 'build'):
     """Open packaged Help through the real production application process."""
     with tempfile.TemporaryDirectory(prefix='tiku package ') as temp:
         directory = Path(temp)
@@ -28,7 +29,7 @@ def main():
             env.update(HOME=str(fixture), DISPLAY='', TIKU_LANG=language,
                        XDG_CONFIG_HOME=str(fixture / '.config'),
                        XDG_DATA_HOME=str(fixture / '.local/share'))
-            command = [str(ROOT / 'build/dev/trk-conduct'), '-n',
+            command = [str(build / 'dev/trk-conduct'), '-n',
                        'packaged desktop (' + language + ')',
                        str(ROOT / 'tests/integration' / script), '--',
                        str(runtime / 'TikuDesktop')]
@@ -45,4 +46,6 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--build', type=Path, default=ROOT / 'build')
+    main(parser.parse_args().build.resolve())

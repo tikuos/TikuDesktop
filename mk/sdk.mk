@@ -21,4 +21,10 @@ app-build app-package app-source: sdk
 	    APP="$(APP)" $(if $(filter app-package,$@),package,$(if $(filter app-source,$@),source,all))
 
 check-app-build: sdk core $(DEV)/TikuDesktop
-	@python3 tools/test_app_build.py --integration
+	@python3 tools/test_app_build.py --integration --build "$(BUILD)"
+
+.PHONY: check-resource-service
+check-resource-service: sdk core
+	@python3 "$(FOUNDATION_ROOT)/tests/integration/run_resource_sdk.py" \
+	    --sdk "$(SDK_DIR)" --desktop "$(SYSTEM)/TikuDesktop" \
+	    --evidence "$(BUILD)/checks/resource-service"

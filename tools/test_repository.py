@@ -54,7 +54,7 @@ class RepositoryTests(unittest.TestCase):
             result = subprocess.run(['make', '-n', 'lint', 'BUILD=' + temp + '/build',
                                      'TIKUOS=' + temp + '/absent'], cwd=ROOT,
                                     capture_output=True, text=True, check=True)
-            self.assertIn('foundation/tools/check_comment_style.py', result.stdout)
+            self.assertIn('tools/check_comment_style.py', result.stdout)
             self.assertNotIn('UNCHECKED', result.stdout)
             self.assertNotIn('SKIPPED', result.stdout)
 

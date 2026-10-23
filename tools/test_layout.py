@@ -149,7 +149,7 @@ class LayoutTests(unittest.TestCase):
             self.write(str(source.relative_to(ROOT)), content)
             app_id = re.search(r'^id=(.+)$', content, re.M)[1]
             targets[f'build/runtime/apps/{app_id}/app.manifest'] = content
-        result = subprocess.run(['make', '-j8', 'sweep-legacy', *targets],
+        result = subprocess.run(['make', '-j8', 'BUILD=build', 'sweep-legacy', *targets],
                                 cwd=self.root, text=True, capture_output=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual((self.root / 'build/runtime/apps/keep.txt').read_text(), 'preserved')

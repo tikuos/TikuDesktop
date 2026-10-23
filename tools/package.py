@@ -85,8 +85,9 @@ def resources(destination, root=ROOT):
         shutil.copytree(source, destination / name, dirs_exist_ok=True)
 
 
-def package(root=ROOT, core=False):
+def package(root=ROOT, core=False, build=None):
     """Replace only a distribution carrying the generated-package marker."""
+    build = Path(build) if build is not None else root / 'build'
     parent = root / 'dist'
     parent.mkdir(exist_ok=True)
     destination = parent / ('TikuDesktop-core' if core else 'TikuDesktop')
@@ -99,10 +100,10 @@ def package(root=ROOT, core=False):
         (stage / 'system').mkdir(parents=True)
         (stage / 'apps').mkdir()
         for name in SYSTEM:
-            shutil.copy2(root / 'build/runtime/system' / name, stage / 'system' / name)
+            shutil.copy2(build / 'runtime/system' / name, stage / 'system' / name)
         inventory = {} if core else manifests(root)
         for app_id, (manifest, module) in inventory.items():
-            source = root / 'build/runtime/apps' / app_id
+            source = build / 'runtime/apps' / app_id
             bundle = stage / 'apps' / app_id
             bundle.mkdir()
             shutil.copy2(manifest, bundle / 'app.manifest')
@@ -235,12 +236,14 @@ if __name__ == '__main__':
     parser.add_argument('action', choices=('resources', 'package', 'check', 'mac'))
     parser.add_argument('--host', choices=('cocoa', 'x11'), default='cocoa')
     parser.add_argument('--core', action='store_true')
+    parser.add_argument('--build', type=Path, default=ROOT / 'build')
     args = parser.parse_args()
+    build = args.build.resolve()
     if args.action == 'resources':
-        resources(ROOT / 'build/runtime/assets')
-        launchers(ROOT / 'build/runtime')
+        resources(build / 'runtime/assets')
+        launchers(build / 'runtime')
     elif args.action == 'package':
-        package(core=args.core)
+        package(core=args.core, build=build)
     elif args.action == 'check':
         check(core=args.core)
     else:

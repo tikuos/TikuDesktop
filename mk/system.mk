@@ -65,8 +65,9 @@ DESKTOP_CONTROLLERS := system/deskbar/tiku_trk_deskbar_roster.c \
                        system/shared/shell/session/tiku_trk_session_controller.c
 # What is left of Tracker's own core, now that the nodes, attributes,
 # queries and volumes have gone down into the Storage kit and the words
-# into Support: this is the file manager's own model and nothing else.
-CORE := system/shared/core/tiku_trk_task.c system/shared/core/tiku_trk_match.c \
+# into Support. The core also composes the desktop resource service.
+CORE := system/shared/core/tiku_trk_resource_session.c \
+        system/shared/core/tiku_trk_task.c system/shared/core/tiku_trk_match.c \
         system/shared/core/tiku_trk_associations.c \
         system/shared/core/tiku_trk_clip.c system/shared/core/tiku_trk_drag.c \
         system/shared/core/tiku_trk_alert.c system/shared/core/tiku_trk_launch.c \
@@ -238,6 +239,7 @@ $(DEV)/trk-conduct: $(call objs,tests/tools/trk_conduct.c) $(CONDUCT_KITS) | $(D
 	$(CC) $(CFLAGS) -o $@ $< $(CONDUCT_KITS) $(LDFLAGS) $(X11_LIBS) -lm
 
 $(BUILD)/tools/icon-export: $(call objs,tools/tiku_trk_icon_export.c) $(DESK_LIBS) | $(SYSTEM)
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -o $@ $< $(DESK_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
 .PHONY: shells

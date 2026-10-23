@@ -21,6 +21,7 @@ import export_sdk
 import package as desktop_package
 
 ROOT = Path(__file__).resolve().parents[1]
+BUILD_ROOT = ROOT / 'build'
 spec = importlib.util.spec_from_file_location('package_app', ROOT / 'apps/package_app.py')
 package_app = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(package_app)
@@ -75,7 +76,7 @@ class BuildTests(unittest.TestCase):
             (self.root / name).symlink_to(ROOT / name, target_is_directory=True)
         for name in ('foundation.lock.json', 'foundation.product.json'):
             shutil.copy2(ROOT / name, self.root / name)
-        foundation = json.loads((ROOT / 'build/foundation/identity.json').read_text())['source_root']
+        foundation = json.loads((BUILD_ROOT / 'foundation/identity.json').read_text())['source_root']
         output = command(['make', '-n', 'core', 'FOUNDATION_ROOT=' + foundation], self.root)
         self.assertNotIn(' -c apps/', output)
 
@@ -172,12 +173,12 @@ class BuildTests(unittest.TestCase):
 
 def runtime_integration(temp):
     """Launch a detached-built app from an otherwise empty core distribution."""
-    driver = ROOT / 'build/dev/TikuDesktop'
-    if not driver.is_file() or not (ROOT / 'build/runtime/system/TikuDesktop').is_file():
+    driver = BUILD_ROOT / 'dev/TikuDesktop'
+    if not driver.is_file() or not (BUILD_ROOT / 'runtime/system/TikuDesktop').is_file():
         raise RuntimeError('Build core and the development desktop before the runtime check')
     fixture = temp / 'core-fixture'
     (fixture / 'build/runtime').mkdir(parents=True)
-    (fixture / 'build/runtime/system').symlink_to(ROOT / 'build/runtime/system')
+    (fixture / 'build/runtime/system').symlink_to(BUILD_ROOT / 'runtime/system')
     (fixture / 'assets').symlink_to(ROOT / 'assets')
     (fixture / 'tools').symlink_to(ROOT / 'tools')
     for name in getattr(desktop_package, 'RESOURCE_NOTICES', {}).values():
@@ -187,6 +188,9 @@ def runtime_integration(temp):
             shutil.copy2(ROOT / name, target)
     desktop_package.package(fixture, core=True)
     runtime = fixture / 'dist/TikuDesktop-core'
+    installed_driver = runtime / 'system/sdk-test-desktop'
+    shutil.copy2(driver, installed_driver)
+    driver = installed_driver
     shutil.copytree(temp / 'installed/apps/calc', runtime / 'apps/calc')
     home = temp / 'desktop-home'
     (home / 'Desktop').mkdir(parents=True)
@@ -219,7 +223,7 @@ def integration():
         original = temp / 'original-sdk'
         relocated = temp / 'relocated-sdk'
         command([sys.executable, str(ROOT / 'tools/export_sdk.py'),
-                 '--copy', str(ROOT / 'build/sdk'), '--output', str(original)], temp)
+                 '--copy', str(BUILD_ROOT / 'sdk'), '--output', str(original)], temp)
         original.rename(relocated)
         sdk = json.loads((relocated / 'sdk.json').read_text())
         assert not any(relocated.rglob('*_private.h'))
@@ -236,8 +240,8 @@ def integration():
         selected = [app for app in selected if app in inventory]
         for app in selected:
             source_parent = temp / 'sources'
-            command(['make', '-s', '-C', str(ROOT / 'apps'), 'source', 'APP=' + app,
-                     'APP_SOURCE_DIR=' + str(source_parent)], temp)
+            command(['make', '-s', '-C', str(BUILD_ROOT / 'foundation/apps'), 'source', 'APP=' + app,
+                     'APP_SOURCE_DIR=' + str(source_parent), 'SDK=' + str(relocated)], temp)
             source = source_parent / app
             output = command(['make', '-j4', 'SDK=' + str(relocated), 'package'], source)
             assert str(ROOT / 'kits') not in output and str(ROOT / 'system') not in output
@@ -281,7 +285,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--integration', action='store_true')
     parser.add_argument('--runtime-only', action='store_true')
+    parser.add_argument('--build', type=Path, default=ROOT / 'build', help='Product SDK and core output directory')
     args = parser.parse_args()
+    BUILD_ROOT = args.build.resolve()
     result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(BuildTests))
     if not result.wasSuccessful():
         sys.exit(1)
@@ -291,6 +297,6 @@ if __name__ == '__main__':
         with tempfile.TemporaryDirectory(prefix='app-runtime-') as directory:
             temp = Path(directory)
             manifest, module = desktop_package.manifests(ROOT)['calc']
-            package_app.package(SimpleNamespace(sdk=ROOT / 'build/sdk', manifest=manifest,
+            package_app.package(SimpleNamespace(sdk=BUILD_ROOT / 'sdk', manifest=manifest,
                 module=ROOT / 'apps/build/apps/calc' / module, output=temp / 'installed/apps/calc'))
             runtime_integration(temp)

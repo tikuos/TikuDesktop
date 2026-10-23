@@ -1,3 +1,4 @@
+test_resource_session_SRCS := system/shared/core/tiku_trk_resource_session.c
 TEST_SOURCE_FLAGS := -DTIKU_TEST_SOURCE_ROOT=\"$(FOUNDATION_VIEW)\"
 # Suites are discovered from the four ownership groups and run by make test.
 TEST_SOURCES := $(sort $(call foundation_wildcard,tests/system/test_*.c tests/kits/test_*.c \

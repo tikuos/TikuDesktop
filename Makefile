@@ -135,7 +135,7 @@ check-architecture: shells
 
 .PHONY: check-layout
 check-layout:
-	@python3 tools/test_app_build.py
+	@python3 tools/test_app_build.py --build "$(BUILD)"
 	@python3 tools/test_layout.py
 
 check-shipping:

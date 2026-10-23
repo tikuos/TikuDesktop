@@ -84,3 +84,18 @@ A local `FOUNDATION_ROOT` override supports shared development. Its contents
 must match the lock, or `FOUNDATION_ALLOW_DIRTY=1` records a development override.
 It does not change the committed submodule pin. Detached application source
 exports use their SDK and require no Stomme checkout.
+
+## Desktop resource service
+
+The shared shell starts its resource service when `STOMME_RESOURCE_DIRECTORY`
+names an absolute private runtime directory. The read namespace mounts at
+`/.stomme`; `STOMME_RESOURCE_MOUNT` selects an explicit alternative. Startup
+rejects existing endpoint files and mount collisions. The named local endpoint
+grants same-user interactive control and excludes application-provider scope.
+`STOMME_RESOURCE_TEST_PROVIDER=1` enables synthetic resources for SDK checks.
+Existing product settings retain their current controllers.
+
+`make check-resource-service` compiles an independent client against a relocated
+product SDK and runs discovery, read, change, watch, failure, stream and job flows
+against the headless product. It uses an isolated home and checks orderly endpoint
+cleanup. The framework runtime contract documents protocol limits and ownership.
