@@ -20,7 +20,7 @@
 
 #include "tiku_jbig2.h"
 #include "tiku_pdf.h"
-#include "../../kits/translation/tiku_jbig2_private.h"
+#include <tiku_jbig2_private.h>
 #include "../fixtures/jbig2.inc"
 
 #define OMAX (1L << 24)

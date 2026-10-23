@@ -12,10 +12,11 @@
 #include "tiku_x11_command.h"
 #include "tiku_text_input.h"
 
-enum { NORMAL, LATIN, CHUNKED, SILENT, REFUSE };
+enum { NORMAL, LATIN, CHUNKED, SILENT, REFUSE,
+       HTML, HTML_CHUNKED, HTML_SILENT, HTML_ONLY, HTML_CHANGED, HTML_WRONG };
 static Display *peer;
 static Window peer_window;
-static Atom clip, utf8, incr, prop;
+static Atom clip, utf8, incr, prop, html, targets, receive_type;
 static const char *payload;
 static size_t length, sent;
 static int mode, active, got_reply;
@@ -31,17 +32,32 @@ static void peer_event(XEvent *e)
     } else if (e->type == SelectionRequest) {
         XSelectionRequestEvent *q = &e->xselectionrequest;
         if (mode == SILENT) return;
+        if (mode == HTML_SILENT && q->target == html) return;
         XEvent reply = {0};
         reply.xselection = (XSelectionEvent){.type=SelectionNotify,
             .requestor=q->requestor, .selection=q->selection, .target=q->target,
             .time=q->time, .property=None};
-        if (mode != REFUSE && (q->target == utf8 || q->target == XA_STRING) &&
+        if (mode >= HTML && q->target == targets) {
+            Atom offered[] = {targets, utf8, html};
+
+            XChangeProperty(peer, q->requestor, q->property, XA_ATOM, 32,
+                PropModeReplace, (unsigned char *)offered, 3);
+            reply.xselection.property = q->property;
+        } else if (mode >= HTML && q->target != html) {
+            if (mode != HTML_ONLY && (q->target == utf8 || q->target == XA_STRING)) {
+                XChangeProperty(peer, q->requestor, q->property, utf8, 8,
+                    PropModeReplace, (unsigned char *)"fallback", 8);
+                reply.xselection.property = q->property;
+            }
+        } else if (mode != REFUSE && (q->target == utf8 || q->target == XA_STRING ||
+                   (mode >= HTML && q->target == html)) &&
             (mode != LATIN || q->target == XA_STRING)) {
             reply.xselection.property = q->property;
-            if (mode == CHUNKED) {
+            if (mode == CHUNKED || mode == HTML_CHUNKED) {
                 unsigned long n = length;
                 receiver = q->requestor; receive_prop = q->property; sent = 0; active = 1;
-                if (length > TIKU_CLIPBOARD_LIMIT) active = 0;
+                receive_type = q->target == html ? html : utf8;
+                if (length > TIKU_CLIPBOARD_LIMIT - (mode == HTML_CHUNKED ? 8 : 0)) active = 0;
                 XSelectInput(peer, receiver, PropertyChangeMask);
                 XChangeProperty(peer, receiver, receive_prop, incr, 32,
                                  PropModeReplace, (unsigned char *)&n, 1);
@@ -54,19 +70,22 @@ static void peer_event(XEvent *e)
                 do {
                     size_t n = left > (1u << 20) ? (1u << 20) : left;
                     XChangeProperty(peer, q->requestor, q->property,
-                        mode == LATIN ? XA_STRING : utf8, 8,
+                        mode == LATIN ? XA_STRING :
+                        q->target == html && mode != HTML_WRONG ? html : utf8, 8,
                         first ? PropModeReplace : PropModeAppend, at, (int)n);
                     at += n; left -= n; first = 0;
                 } while (left);
             }
         }
+        if (mode == HTML_CHANGED && q->target == html)
+            XSetSelectionOwner(peer, clip, None, CurrentTime);
         XSendEvent(peer, q->requestor, False, 0, &reply);
     } else if (e->type == PropertyNotify && active &&
                e->xproperty.window == receiver && e->xproperty.atom == receive_prop &&
                e->xproperty.state == PropertyDelete) {
         size_t n = length - sent;
         if (n > piece) n = piece; /* 3 splits multi-byte UTF-8 characters. */
-        XChangeProperty(peer, receiver, receive_prop, utf8, 8,
+        XChangeProperty(peer, receiver, receive_prop, receive_type, 8,
                          PropModeReplace, (const unsigned char *)payload + sent, (int)n);
         sent += n;
         if (!n) active = 0;
@@ -147,7 +166,7 @@ static size_t get_incr(tiku_x11_clipboard_t *c, Atom target, char *out)
         assert(XGetWindowProperty(peer, peer_window, prop, 0, 1L << 20, False,
             AnyPropertyType, &type, &format, &count, &after, &data) == Success);
         if (type == None) continue;
-        assert(type == (target == XA_STRING ? XA_STRING : utf8) && !after);
+        assert(type == (target == XA_STRING ? XA_STRING : target == html ? html : utf8) && !after);
         if (count) memcpy(out + used, data, count);
         used += count;
         XFree(data);
@@ -187,6 +206,103 @@ static void export_test(tiku_x11_clipboard_t *c)
     XDeleteProperty(peer, peer_window, prop);
     XDestroyWindow(peer, other); XSync(peer, False);
     free(text); free(got);
+}
+
+/** @brief Exercise direct/chunked HTML, atomic staging, limits and owner loss. */
+static void html_test(Display *d)
+{
+    Window w = XCreateSimpleWindow(d, DefaultRootWindow(d), 0,0,1,1,0,0,0);
+    tiku_x11_clipboard_t c;
+    const char content[] = "<p><b>caf\xc3\xa9</b></p>";
+    const void *data;
+    size_t bytes;
+    Atom type;
+    int format;
+    unsigned long count;
+    unsigned stamp;
+    char *large = malloc(300001), *got = malloc(300001);
+    unsigned char *reply;
+
+    assert(large && got);
+    XSelectInput(d, w, PropertyChangeMask);
+    tiku_x11_clipboard_init(&c, d, w);
+    for (int kind = HTML; kind <= HTML_CHUNKED; kind++) {
+        owner(kind, content, strlen(content));
+        stamp = tiku_clipboard_stamp();
+        assert(fetch(&c) == TIKU_CLIPBOARD_OK);
+        assert(tiku_clipboard_stamp() == stamp + 1);
+        assert(!strcmp(tiku_clipboard_text(), "fallback"));
+        data = tiku_clipboard_find("text/html", &bytes);
+        assert(data && bytes == strlen(content) && !memcmp(data, content, bytes));
+        assert(XGetSelectionOwner(d, clip) == peer_window);
+    }
+    owner(HTML_ONLY, content, strlen(content));
+    assert(fetch(&c) == TIKU_CLIPBOARD_OK && !tiku_clipboard_length());
+    assert(tiku_clipboard_find("text/html", NULL));
+    owner(HTML_WRONG, content, strlen(content));
+    assert(fetch(&c) == TIKU_CLIPBOARD_INVALID && !tiku_clipboard_data(NULL, NULL));
+    owner(HTML_CHANGED, content, strlen(content));
+    assert(fetch(&c) == TIKU_CLIPBOARD_UNAVAILABLE);
+    assert(tiku_clipboard_import_typed("old", 3, "text/html", "<p>old</p>", 10));
+    tiku_x11_clipboard_tick(&c, now);
+    for (int i = 0; c.publishing && i < 20; i++) pump(&c);
+    owner(HTML_SILENT, content, strlen(content));
+    assert(tiku_x11_clipboard_request(&c, now, 0));
+    for (int i = 0; c.requested != html && i < 100; i++) pump(&c);
+    assert(c.requested == html && c.plainlen == 8);
+    assert(!strcmp(tiku_clipboard_text(), "old"));
+    assert(tiku_x11_clipboard_request(&c, now, 1));
+    for (int i = 0; i < 3; i++) pump(&c);
+    tiku_x11_clipboard_tick(&c, now + 1000001);
+    assert(c.result == TIKU_CLIPBOARD_TIMEOUT && !c.requestor && !c.plain);
+    assert(!tiku_clipboard_data(NULL, NULL) && !tiku_clipboard_length());
+    owner(HTML_CHUNKED, content, TIKU_CLIPBOARD_LIMIT - 4);
+    assert(fetch(&c) == TIKU_CLIPBOARD_TOO_LARGE);
+    memset(large, 'x', 300000); large[300000] = 0;
+    assert(tiku_clipboard_import_typed("plain", 5, "text/html", large, 300000));
+    tiku_x11_clipboard_tick(&c, now);
+    for (int i = 0; c.publishing && i < 20; i++) pump(&c);
+    reply = get(&c, targets, &type, &format, &count);
+    assert(reply && type == XA_ATOM && format == 32 && count == 6);
+    assert(((Atom *)reply)[5] == html); XFree(reply);
+    assert(get_incr(&c, html, got) == 300000 && !memcmp(got, large, 300000));
+    assert(tiku_clipboard_import_typed("plain", 5, "text/html", content, strlen(content)));
+    tiku_x11_clipboard_tick(&c, now);
+    for (int i = 0; c.publishing && i < 20; i++) pump(&c);
+    reply = get(&c, html, &type, &format, &count);
+    assert(reply && type == html && format == 8 && count == strlen(content));
+    assert(!memcmp(reply, content, count)); XFree(reply);
+    publish(&c, "text only");
+    assert(!get(&c, html, &type, &format, &count));
+    tiku_x11_clipboard_close(&c);
+    XDestroyWindow(d, w); XSync(d, False);
+    free(large); free(got);
+    puts("PASS: native HTML direct/INCR, atomic multi-representation transfer, owner loss and size bounds");
+}
+
+/** @brief A peer sending tiny pieces cannot defer input without a total deadline. */
+static void slow_import_test(Display *d)
+{
+    Window w = XCreateSimpleWindow(d, DefaultRootWindow(d), 0,0,1,1,0,0,0);
+    tiku_x11_clipboard_t c;
+    const char content[] = "<p>Slow content must not keep the desktop waiting forever.</p>";
+
+    tiku_x11_clipboard_init(&c, d, w);
+    owner(HTML_CHUNKED, content, strlen(content));
+    piece = 1;
+    assert(tiku_x11_clipboard_request(&c, now, 1));
+    for (int i = 0; c.requestor && i < 60; i++) {
+        now += 100000;
+        pump(&c);
+    }
+    active = 0; mode = SILENT;
+    assert(c.result == TIKU_CLIPBOARD_TIMEOUT && !c.requestor);
+    assert(!tiku_clipboard_length() && !tiku_clipboard_data(NULL, NULL));
+    for (int i = 0; i < 3; i++) pump(&c);
+    piece = 3;
+    tiku_x11_clipboard_close(&c);
+    XDestroyWindow(d, w); XSync(d, False);
+    puts("PASS: total import deadline expires despite continuing INCR progress");
 }
 
 static void protocol_test(Display *d)
@@ -341,33 +457,37 @@ static void host_test(const char *display)
     tiku_event_t ev;
     for (int i = 0; i < 20; i++) while (tiku_host_poll(host, &ev)) {}
     Window w = find_host();
-    owner(NORMAL, "fresh external", 14);
-    XEvent paste = {0};
-    paste.xkey = (XKeyEvent){.type=KeyPress, .display=peer, .window=w,
-        .root=DefaultRootWindow(peer), .keycode=XKeysymToKeycode(peer, XK_v),
-        .state=ControlMask, .same_screen=True};
-    XSendEvent(peer, w, False, KeyPressMask, &paste);
-    XEvent after = paste; after.xkey.keycode = XKeysymToKeycode(peer, XK_a);
-    XSendEvent(peer, w, False, KeyPressMask, &after); XFlush(peer);
-    int changed = 0, pasted = 0, following = 0;
-    for (int i = 0; i < 2000 && !following; i++) {
-        while (tiku_host_poll(host, &ev)) {
-            if (ev.type == TIKU_EVENT_CLIPBOARD) {
-                assert(ev.key == TIKU_CLIPBOARD_OK);
-                assert(!strcmp(tiku_clipboard_text(), "fresh external")); changed = 1;
+    for (unsigned shift = 0; shift <= 1; shift++) {
+        owner(NORMAL, shift ? "shift external" : "fresh external", 14);
+        XEvent paste = {0};
+        paste.xkey = (XKeyEvent){.type=KeyPress, .display=peer, .window=w,
+            .root=DefaultRootWindow(peer), .keycode=XKeysymToKeycode(peer, XK_v),
+            .state=ControlMask | (shift ? ShiftMask : 0), .same_screen=True};
+        XSendEvent(peer, w, False, KeyPressMask, &paste);
+        XEvent after = paste; after.xkey.keycode = XKeysymToKeycode(peer, XK_a);
+        XSendEvent(peer, w, False, KeyPressMask, &after); XFlush(peer);
+        int changed = 0, pasted = 0, following = 0;
+        for (int i = 0; i < 2000 && !following; i++) {
+            while (tiku_host_poll(host, &ev)) {
+                if (ev.type == TIKU_EVENT_CLIPBOARD) {
+                    assert(ev.key == TIKU_CLIPBOARD_OK);
+                    assert(!strcmp(tiku_clipboard_text(),
+                                   shift ? "shift external" : "fresh external")); changed = 1;
+                }
+                if (ev.type == TIKU_EVENT_KEY_DOWN && ev.key == 'v') {
+                    assert(!!(ev.modifiers & TIKU_MOD_SHIFT) == shift);
+                    assert(changed); pasted = 1;
+                }
+                if (ev.type == TIKU_EVENT_KEY_DOWN && ev.key == 'a') {
+                    assert(pasted); following = 1;
+                }
             }
-            if (ev.type == TIKU_EVENT_KEY_DOWN && ev.key == 'v') {
-                assert(changed); pasted = 1;
-            }
-            if (ev.type == TIKU_EVENT_KEY_DOWN && ev.key == 'a') {
-                assert(pasted); following = 1;
-            }
+            XSync(peer, False);
+            while (XPending(peer)) { XEvent e; XNextEvent(peer, &e); peer_event(&e); }
+            struct timespec pause = {0,1000000}; nanosleep(&pause, NULL);
         }
-        XSync(peer, False);
-        while (XPending(peer)) { XEvent e; XNextEvent(peer, &e); peer_event(&e); }
-        struct timespec pause = {0,1000000}; nanosleep(&pause, NULL);
+        assert(changed && pasted && following);
     }
-    assert(changed && pasted && following);
     /*
      * Which key means "this is an instruction".  Control always, on
      * every host, because every shortcut this desktop has is a Control
@@ -505,7 +625,9 @@ int main(void)
     utf8 = XInternAtom(peer, "UTF8_STRING", False);
     incr = XInternAtom(peer, "INCR", False);
     prop = XInternAtom(peer, "_TIKU_TEST_CLIP", False);
-    protocol_test(d); host_test(display);
+    html = XInternAtom(peer, "text/html", False);
+    targets = XInternAtom(peer, "TARGETS", False);
+    protocol_test(d); html_test(d); slow_import_test(d); host_test(display);
     XCloseDisplay(peer); XCloseDisplay(d);
     return 0;
 }

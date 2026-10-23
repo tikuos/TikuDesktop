@@ -15,3 +15,6 @@ temp/
 __pycache__/
 *.pyc
 build-*/
+
+# Local foundation checkout override.
+foundation.local.mk

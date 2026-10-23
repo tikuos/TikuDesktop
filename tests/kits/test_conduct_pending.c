@@ -1,6 +1,6 @@
 /* Query replies do not consume unrelated watch notifications. */
 #define _XOPEN_SOURCE 600
-#include "../../kits/application/tiku_conduct.c"
+#include <tiku_conduct.c>
 #include <assert.h>
 int main(void)
 {

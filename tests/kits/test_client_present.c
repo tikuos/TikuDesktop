@@ -1,5 +1,5 @@
 /* Pixel presentation uses the same success convention as command lists. */
-#include "../../kits/application/tiku_client.c"
+#include <tiku_client.c>
 #include <sys/socket.h>
 #include <assert.h>
 int main(void)

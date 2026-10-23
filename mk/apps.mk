@@ -43,6 +43,7 @@ SO_APPS     := $(APPS_D)/terminal/terminal.so $(APPS_D)/editor/editor.so \
                $(APPS_D)/calc/Calculator.so \
                $(APPS_D)/hex/TikuHex.so $(APPS_D)/notes/TikuNotes.so \
                $(APPS_D)/basic/TikuBasic.so $(APPS_D)/c/TikuC.so
+SO_APPS += $(APPS_D)/write/TikuWrite.so
 SO_EXAMPLE_NAMES := hello clock counter sketch twowin sensors pdfpane
 SO_EXAMPLES := $(foreach a,$(SO_EXAMPLE_NAMES),$(APPS_D)/$(a)/$(a).so)
 
@@ -63,10 +64,10 @@ BASIC_TARGETS := $(BASICHOST)
 BASIC_DEPS := $(wildcard $(TIKUOS)/basic/*.h) \
               $(TIKUOS)/kernel/memory/tiku_mem.h \
               $(wildcard $(TIKUOS)/basic/*.inl) \
-              $(wildcard apps/basichost/*.h apps/basichost/shell/*.h \
+              $(call foundation_wildcard,apps/basichost/*.h apps/basichost/shell/*.h \
                          apps/basichost/hal/*.h apps/basichost/kernel/memory/*.h)
 
-$(BASICHOST): apps/basichost/tiku_basic_host.c $(BASIC_SRC) $(BASIC_DEPS) \
+$(BASICHOST): $(FOUNDATION_VIEW)/apps/basichost/tiku_basic_host.c $(BASIC_SRC) $(BASIC_DEPS) \
               | $(BUILD)
 	@mkdir -p $(dir $@)
 	$(CC) -O2 -std=gnu11 -o $@ apps/basichost/tiku_basic_host.c $(BASIC_SRC) \
@@ -100,6 +101,13 @@ APP_MANIFESTS := $(APPS_D)/editor/app.manifest \
     $(APPS_D)/circuit/app.manifest \
     $(APPS_D)/monitor/app.manifest \
     $(APPS_D)/vfs/app.manifest
+APP_MANIFESTS += $(APPS_D)/write/app.manifest
+
+$(APPS_D)/write/app.manifest: apps/write/write.app
+	@mkdir -p $(dir $@)
+	cp $< $@
+
+WRITE_SRC := $(sort $(call foundation_wildcard,apps/write/*.c))
 
 EXAMPLE_MANIFESTS := $(APPS_D)/hello/app.manifest \
     $(APPS_D)/clock/app.manifest \
@@ -187,7 +195,25 @@ system: $(RUNNER) $(DESK_SUP)
 examples: $(PROBE) $(GALLERY) $(SOUNDS) $(METRICS) $(DEMOAPP) $(SO_EXAMPLES) $(EXAMPLE_MANIFESTS)
 tests: $(TEST_APP) $(FAULT_APP)
 examples: $(EXAMPLES)
+examples: $(BUILD)/examples/tiku_document_model
+examples: $(BUILD)/examples/tiku_document_layout
+examples: $(BUILD)/examples/tiku_document_file
 loadable: $(SO_APPS) $(SO_EXAMPLES) $(APP_MANIFESTS) $(EXAMPLE_MANIFESTS) $(RUNNER)
+
+$(BUILD)/examples/tiku_document_model: \
+        $(OBJ)/examples/document/tiku_document_model.o $(LIB_DOCUMENT)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -o $@ $^ -pthread
+
+$(BUILD)/examples/tiku_document_layout: \
+        $(OBJ)/examples/document/tiku_document_layout.o $(DESK_LIBS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm $(X11_LIBS) -pthread
+
+$(BUILD)/examples/tiku_document_file: \
+        $(OBJ)/examples/document/tiku_document_file.o $(DESK_LIBS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
 $(PROBE): $(OBJ)/examples/diagnostics/tiku_probe.o $(LIB_TRANSPORT) | $(BUILD)
 	@mkdir -p $(dir $@)
@@ -225,8 +251,8 @@ $(RUNTIME)/apps/terminal/tiku-term: $(OBJ)/apps/terminal/tiku_term.o \
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(X11_LIBS) -lm
 
-EDITOR_SRC := $(filter-out apps/editor/tiku_editor_main.c,$(sort $(wildcard apps/editor/*.c)))
-EDITOR_HEADERS := $(wildcard apps/editor/*.h)
+EDITOR_SRC := $(filter-out apps/editor/tiku_editor_main.c,$(sort $(call foundation_wildcard,apps/editor/*.c)))
+EDITOR_HEADERS := $(call foundation_wildcard,apps/editor/*.h)
 $(RUNTIME)/apps/editor/tiku-edit: $(call objs,$(EDITOR_SRC)) \
     $(OBJ)/apps/editor/tiku_editor_main.o $(LIB_EDITOR) $(LIB_RUNTIME) \
     $(LIB_TRANSLATION) $(LIB_UI) $(LIB_TRANSPORT) | $(BUILD)
@@ -281,7 +307,7 @@ $(APPS_D)/archive/app.manifest: apps/archive/archive.app
 
 apps loadable: $(APPS_D)/doc/TikuDoc.so $(APPS_D)/slides/TikuSlides.so
 OFFICEVIEW_SRC := apps/office/tiku_officeview.c
-OFFICEVIEW_DEPS := $(wildcard apps/office/*.h apps/office/*.inl)
+OFFICEVIEW_DEPS := $(call foundation_wildcard,apps/office/*.h apps/office/*.inl)
 DOCVIEW_SRC := apps/doc/tiku_docview_app.c $(OFFICEVIEW_SRC)
 SLIDESVIEW_SRC := apps/slides/tiku_slidesview_app.c $(OFFICEVIEW_SRC)
 
@@ -308,14 +334,14 @@ $(APPS_D)/grab/app.manifest: apps/grab/grab.app
 	cp $< $@
 
 apps loadable: $(APPS_D)/sdr/TikuSDR.so
-SDR_SRC := $(sort $(wildcard apps/sdr/*.c))
+SDR_SRC := $(sort $(call foundation_wildcard,apps/sdr/*.c))
 $(APPS_D)/sdr/app.manifest: apps/sdr/sdr.app
 	@mkdir -p $(dir $@)
 	cp $< $@
 
 apps loadable: $(APPS_D)/reader/TikuReader.so
-READER_SRC := $(sort $(wildcard apps/reader/*.c))
-READER_HEADERS := $(wildcard apps/reader/*.h)
+READER_SRC := $(sort $(call foundation_wildcard,apps/reader/*.c))
+READER_HEADERS := $(call foundation_wildcard,apps/reader/*.h)
 READER_CORE_SRC := $(filter-out apps/reader/tiku_reader_app.c,$(READER_SRC))
 
 $(APPS_D)/reader/app.manifest: apps/reader/reader.app
@@ -323,7 +349,7 @@ $(APPS_D)/reader/app.manifest: apps/reader/reader.app
 	cp $< $@
 
 apps loadable: $(APPS_D)/circuit/TikuCircuit.so
-CIRCUIT_SRC := $(sort $(wildcard apps/circuit/*.c))
+CIRCUIT_SRC := $(sort $(call foundation_wildcard,apps/circuit/*.c))
 
 $(APPS_D)/circuit/app.manifest: apps/circuit/circuit.app
 	@mkdir -p $(dir $@)
@@ -337,7 +363,7 @@ $(APPS_D)/marker/app.manifest: apps/marker/marker.app
 	cp $< $@
 
 apps loadable: $(APPS_D)/monitor/DeviceMonitor.so $(APPS_D)/vfs/VFSInspector.so
-DEVICE_UTIL_DEPS := $(wildcard apps/deviceutils/*.c apps/deviceutils/*.inl)
+DEVICE_UTIL_DEPS := $(call foundation_wildcard,apps/deviceutils/*.c apps/deviceutils/*.inl)
 $(APPS_D)/monitor/app.manifest: apps/deviceutils/monitor.app
 	@mkdir -p $(dir $@)
 	cp $< $@
@@ -345,26 +371,28 @@ $(APPS_D)/vfs/app.manifest: apps/deviceutils/vfs.app
 	@mkdir -p $(dir $@)
 	cp $< $@
 
-$(BUILD)/tests/slowstatvfs.so: tests/fixtures/tools/slowstatvfs.c | $(BUILD)/tests
+$(BUILD)/tests/slowstatvfs.so: $(FOUNDATION_VIEW)/tests/fixtures/tools/slowstatvfs.c | $(BUILD)/tests
 	@mkdir -p $(dir $@)
 	$(CC) -shared -fPIC -O2 -o $@ $< -ldl
 
-$(BUILD)/tests/Stall.so: tests/fixtures/stall/tiku_stall.c $(PIC_LIBS) | $(BUILD)/tests
+$(BUILD)/tests/Stall.so: $(FOUNDATION_VIEW)/tests/fixtures/stall/tiku_stall.c $(PIC_LIBS) | $(BUILD)/tests
 	@mkdir -p $(dir $@)
 	$(CC) $(SO_CFLAGS) -rdynamic -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
-$(BUILD)/tests/Fault.so: tests/fixtures/fault/tiku_fault.c $(PIC_LIBS) | $(BUILD)/tests
+$(BUILD)/tests/Fault.so: $(FOUNDATION_VIEW)/tests/fixtures/fault/tiku_fault.c $(PIC_LIBS) | $(BUILD)/tests
 	@mkdir -p $(dir $@)
 	$(CC) $(SO_CFLAGS) -rdynamic -o $@ $< $(PIC_LIBS) $(LDFLAGS) $(X11_LIBS) -lm
 
-BENCH_SRC := $(sort $(wildcard apps/bench/*.c))
-BENCH_HEADERS := $(wildcard apps/bench/*.h)
+BENCH_SRC := $(sort $(call foundation_wildcard,apps/bench/*.c))
+BENCH_HEADERS := $(call foundation_wildcard,apps/bench/*.h)
 
-CONSOLE_SRC := $(sort $(wildcard apps/console/*.c))
-CONSOLE_HEADERS := $(wildcard apps/console/*.h)
+NOTES_SRC := $(sort $(call foundation_wildcard,apps/notes/*.c))
 
-IDE_SRC := $(sort $(wildcard apps/ide/*.c))
-IDE_HEADERS := $(wildcard apps/ide/*.h)
+CONSOLE_SRC := $(sort $(call foundation_wildcard,apps/console/*.c))
+CONSOLE_HEADERS := $(call foundation_wildcard,apps/console/*.h)
+
+IDE_SRC := $(sort $(call foundation_wildcard,apps/ide/*.c))
+IDE_HEADERS := $(call foundation_wildcard,apps/ide/*.h)
 
 # The same source wearing its other name: what differs is what it puts
 # forward, and a copy would only learn to disagree.
@@ -404,11 +432,13 @@ probe: $(PROBE)
 	$(PROBE) -v
 
 # Production modules use the same descriptors as the standalone apps build.
-APPS_SOURCE := apps
+APPS_SOURCE := $(APP_SOURCE_VIEW)
 APP_BUILD := $(BUILD)/applications
 APP_OUTPUT := $(APPS_D)
 APP_KIT_DIR := $(PICLIB)
-APP_AVAILABLE_KITS := $(patsubst libtiku_%.a,%,$(notdir $(PIC_LIBS) $(PICLIB)/libtiku_editor.a))
-APP_BASE_CFLAGS := $(CFLAGS) $(KIT_INC)
+APP_AVAILABLE_KITS := $(patsubst libtiku_%.a,%,$(notdir $(PIC_LIBS) $(OPTIONAL_PIC_LIBS) $(PICLIB)/libtiku_editor.a))
+APP_SDK_METADATA := $(FOUNDATION_VIEW)/identity.json
+APP_SDK_IDENTITY := $(shell python3 -c 'import json; print(json.load(open("$(APP_SDK_METADATA)"))["sdk_identity"])')
+APP_BASE_CFLAGS := $(CFLAGS) $(KIT_INC) $(APP_INC)
 APP_BASE_LDFLAGS := $(LDFLAGS) $(X11_LIBS) -lm -pthread
 -include apps/catalog.mk apps/rules.mk

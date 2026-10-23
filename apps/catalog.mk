@@ -2,7 +2,7 @@
 # Authors: Ambuj Varshney <ambuj@tiku-os.org>
 # SPDX-License-Identifier: Apache-2.0
 A := $(APPS_SOURCE)
-APP_CANDIDATES := archive bench calc circuit console calculator monitor vfs diff doc editor grab hex basic c image marker notes pdf reader sdr slides terminal
+APP_CANDIDATES := archive bench calc circuit console calculator monitor vfs diff doc editor grab hex basic c image marker notes pdf reader sdr slides terminal write
 app_manifest_archive := $(A)/archive/archive.app
 app_module_archive := TikuArchive.so
 app_sources_archive := $(sort $(wildcard $(A)/archive/*.c))
@@ -108,7 +108,7 @@ app_flags_marker := -fvisibility=hidden
 app_manifest_notes := $(A)/notes/notes.app
 app_module_notes := TikuNotes.so
 app_sources_notes := $(sort $(wildcard $(A)/notes/*.c))
-app_kits_notes := application translation media
+app_kits_notes := application translation media document_formats document
 app_common_notes :=
 app_flags_notes :=
 app_manifest_pdf := $(A)/pdf/pdf.app
@@ -141,6 +141,12 @@ app_sources_terminal := $(sort $(wildcard $(A)/terminal/*.c))
 app_kits_terminal := application translation media
 app_common_terminal :=
 app_flags_terminal :=
+app_manifest_write := $(A)/write/write.app
+app_module_write := TikuWrite.so
+app_sources_write := $(sort $(wildcard $(A)/write/*.c))
+app_kits_write := application translation media document_formats document
+app_common_write :=
+app_flags_write :=
 
 # Reusable application libraries are built by the application build.
 common_sources_reader := $(filter-out $(A)/reader/tiku_reader_app.c,$(sort $(wildcard $(A)/reader/*.c)))

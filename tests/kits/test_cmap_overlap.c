@@ -1,5 +1,5 @@
 /* Broad CMap ranges remain candidates beneath many narrow ranges. */
-#include "../../kits/translation/tiku_pdf_cmap.c"
+#include <tiku_pdf_cmap.c>
 int main(void)
 {
     pdf_cmap_t m = {0};

@@ -5,6 +5,14 @@ generated development output, and distributable runtime output. Root builds
 use `build/`; standalone application builds use `apps/build/` by default.
 Both output directories are excluded from version control.
 
+## Selected foundation sources
+
+Shared kit, application and shell implementations live in the foundation
+checkout. This product retains configurations, descriptors, resources, provider
+implementations and application variants. The paths in the source map below
+refer to the composed `build/foundation/` tree for migrated sources. See
+[foundation source ownership](foundation.md) for build and contribution commands.
+
 ## Source ownership
 
 ```text

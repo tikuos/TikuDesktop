@@ -151,7 +151,7 @@ void tiku_bench_controls(bench_t *st)
                     edit && !st->usb);
     in = card_in(TIKU_BENCH_CARD_MODE);
     tiku_dialog_add(&st->dialog, FLASH, (tiku_rect_t){in.x, in.y, in.w, 18},
-                    TIKU_DIALOG_TOGGLE, edit);
+                    TIKU_DIALOG_TOGGLE, edit && strcmp(st->mcu, "esp32p4"));
     tiku_dialog_add(&st->dialog, MONITOR,
                     (tiku_rect_t){in.x, in.y + 18, in.w, 18},
                     TIKU_DIALOG_TOGGLE, edit);

@@ -1,0 +1,52 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/documents
+# Preserve a nested table after the source process exits; undo and redo it.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title nested.tkrd
+click 150 140
+click 334 8
+wait 5
+menu-pick Select row
+wait 10
+key c ctrl
+wait 25
+key w ctrl
+wait 25
+expect-no-title TikuWrite
+click 980 30
+wait 4
+menu-pick Documents
+wait 4
+menu-pick TikuWrite
+wait 100
+expect-title Untitled
+key v ctrl
+wait 30
+expect-title * Untitled
+expect-same-as-redraw
+shot /tmp/tiku-write-nested-paste.png
+key z ctrl
+wait 20
+expect-title Untitled
+expect-pixel 160 170 ffffff
+expect-same-as-redraw
+key z ctrl shift
+wait 20
+expect-title * Untitled
+expect-same-as-redraw
+key Escape
+click 200 140
+key v ctrl
+wait 30
+expect-title * Untitled
+expect-same-as-redraw
+shot /tmp/tiku-write-nested-in-cell.png
+key z ctrl
+wait 20
+expect-title * Untitled
+expect-same-as-redraw

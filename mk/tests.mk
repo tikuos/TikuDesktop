@@ -1,5 +1,6 @@
+TEST_SOURCE_FLAGS := -DTIKU_TEST_SOURCE_ROOT=\"$(FOUNDATION_VIEW)\"
 # Suites are discovered from the four ownership groups and run by make test.
-TEST_SOURCES := $(sort $(wildcard tests/system/test_*.c tests/kits/test_*.c \
+TEST_SOURCES := $(sort $(call foundation_wildcard,tests/system/test_*.c tests/kits/test_*.c \
                                 tests/apps/test_*.c tests/integration/test_*.c))
 ifeq ($(strip $(TEST_SOURCES)),)
 $(error No test sources found under tests/)
@@ -16,7 +17,7 @@ $(foreach src,$(TEST_SOURCES),$(eval $(basename $(notdir $(src)))_FILE := $(src)
 ifeq ($(TIKU_HOST),x11)
 TESTS    := $(filter-out test_host_cocoa,$(TESTS))
 else
-TESTS    := $(filter-out test_host_render test_host_clipboard,$(TESTS))
+TESTS    := $(filter-out test_host_render test_host_clipboard test_clipboard_offer,$(TESTS))
 endif
 TESTBINS := $(addprefix $(BUILD)/tests/,$(TESTS))
 
@@ -76,29 +77,29 @@ test_circuit_viewer_LDLIBS := $(X11_LIBS) -lm
 .SECONDARY: $(call objs,$(CIRCUIT_SRC))
 # The fault suites link their own copies of the vector rasteriser and of
 # the circuit importers, built to take the suites' failing allocator.
-$(OBJ)/tests/fixtures/vector_faults.o: kits/translation/tiku_vector_raster.c \
-        kits/translation/tiku_vector_raster.h
+$(OBJ)/tests/fixtures/vector_faults.o: $(FOUNDATION_VIEW)/kits/interface/tiku_vector_raster.c \
+        $(FOUNDATION_VIEW)/kits/translation/tiku_vector_raster.h
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(KIT_INC) -DTIKU_VECTOR_TEST_ALLOC -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $(KIT_INC) -DTIKU_VECTOR_TEST_ALLOC -MMD -MP -c -o $@ $(call kit_source,$<)
 $(BUILD)/tests/test_vector_faults: $(OBJ)/tests/fixtures/vector_faults.o
 test_vector_faults_LIBS := $(OBJ)/tests/fixtures/vector_faults.o
 CIRCUIT_FAULT_SRCS := $(filter kits/translation/tiku_circuit%.c,\
-                               $(TRANSLATION)) kits/translation/tiku_xml.c
+                               $(TRANSLATION) $(DOCUMENT_FORMATS) $(DECK_FORMATS)) kits/translation/tiku_xml.c
 CIRCUIT_FAULT_OBJS := $(patsubst kits/translation/%.c,\
                           $(OBJ)/tests/fixtures/circuit_faults/%.o,\
                           $(CIRCUIT_FAULT_SRCS))
-$(OBJ)/tests/fixtures/circuit_faults/%.o: kits/translation/%.c \
-        tests/fixtures/circuit_alloc.h
+$(OBJ)/tests/fixtures/circuit_faults/%.o: $(FOUNDATION_VIEW)/kits/translation/%.c \
+        $(FOUNDATION_VIEW)/tests/fixtures/circuit_alloc.h
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(KIT_INC) -include tests/fixtures/circuit_alloc.h \
-	      -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $(KIT_INC) -include $(FOUNDATION_VIEW)/tests/fixtures/circuit_alloc.h \
+	      -MMD -MP -c -o $@ $(call kit_source,$<)
 $(BUILD)/tests/test_circuit_faults: $(CIRCUIT_FAULT_OBJS)
 test_circuit_faults_LIBS := $(CIRCUIT_FAULT_OBJS)
 # Graphics allocation failures use an isolated allocator in the fixture.
-$(OBJ)/tests/fixtures/surface_alloc.o: kits/interface/tiku_gfx.c
+$(OBJ)/tests/fixtures/surface_alloc.o: $(FOUNDATION_VIEW)/kits/interface/tiku_gfx.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(KIT_INC) -Dmalloc=tiku_test_surface_malloc \
-	      -MMD -MP -c -o $@ $<
+	      -MMD -MP -c -o $@ $(call kit_source,$<)
 test_surface_alloc_LIBS := $(OBJ)/tests/fixtures/surface_alloc.o
 test_reader_large_SRCS := $(READER_CORE_SRC)
 test_reader_reliability_SRCS := $(READER_CORE_SRC)
@@ -114,6 +115,15 @@ test_document_reader_LDLIBS := $(X11_LIBS) -lm
 test_image_viewer_LDLIBS := $(X11_LIBS) -lm
 test_pdf_viewer_LDLIBS := $(X11_LIBS) -lm
 test_fontset_LDLIBS := -lpthread
+test_richfont_LIBS := $(LIB_DOCUMENT)
+test_richfont_LDLIBS := $(X11_LIBS) -lpthread
+test_richperformance_LIBS := $(LIB_DOCUMENT)
+test_richperformance_LDLIBS := $(X11_LIBS) -lpthread
+test_richoutput_LDLIBS := $(X11_LIBS) -lpthread
+test_richmedia_LDLIBS := $(X11_LIBS) -lpthread
+test_richtables_LDLIBS := $(X11_LIBS) -lpthread
+test_richcontinuation_LDLIBS := $(X11_LIBS) -lpthread
+test_richrowoutput_LDLIBS := $(X11_LIBS) -lpthread
 test_fontscan_audit_LDLIBS := -lpthread
 test_office_caps_LDLIBS := -lpthread
 test_office_piebar_LDLIBS := -lpthread
@@ -199,8 +209,8 @@ test_prefs_SRCS   := system/shared/core/tiku_trk_prefs.c
 test_volume_SRCS   := $(COMMON) system/deskbar/tiku_trk_deskicons.c
 test_vdir_SRCS   := $(COMMON)
 test_alert_SRCS   := system/shared/core/tiku_trk_alert.c system/shared/core/tiku_trk_match.c system/shared/core/tiku_trk_task.c system/shared/core/tiku_trk_clip.c system/shared/core/tiku_trk_drag.c
-test_inflate_CFLAGS := -Itests/fixtures
-test_thumb_CFLAGS := -Itests/fixtures
+test_inflate_CFLAGS := -I$(FOUNDATION_VIEW)/tests/fixtures
+test_thumb_CFLAGS := -I$(FOUNDATION_VIEW)/tests/fixtures
 test_drag_SRCS   := system/shared/core/tiku_trk_drag.c
 test_clip_SRCS   := system/shared/core/tiku_trk_clip.c
 test_edit_SRCS   := system/shared/core/tiku_trk_select.c system/shared/core/tiku_trk_match.c
@@ -216,23 +226,26 @@ test_remote_LDLIBS := -lpthread
 test_client_wake_LDLIBS := $(X11_LIBS) -lm
 test_client_reports_LDLIBS := $(X11_LIBS) -lm
 test_client_present_LDLIBS := $(X11_LIBS) -lm
+test_client_clipboard_LDLIBS := $(X11_LIBS) -lm
 test_appload_LDLIBS := $(X11_LIBS) -lm -ldl
-test_appload_CFLAGS := -DTIKU_KITS_DIR=\"$(K)\"
+test_appload_CFLAGS := -DTIKU_KITS_DIR=\"$(FOUNDATION_VIEW)/kits\"
 test_shm_LDLIBS := $(X11_LIBS) -lm $(RT_LIBS)
+test_remote_snapshot_LDLIBS := $(RT_LIBS)
 ifeq ($(UNAME_S),Linux)
 test_shm_LDLIBS += -Wl,--wrap=posix_fallocate
+test_remote_snapshot_LDLIBS += -Wl,--wrap=realloc
 endif
 test_channel_LDLIBS := -lutil -lpthread
 # A thread stands in for the desktop's worker, reading the shell road.
 test_link_tcp_LDLIBS := -lpthread
-test_trail_CFLAGS := -I$(K)/support
-test_report_CFLAGS := -I$(K)/support
-test_watchdog_CFLAGS := -I$(K)/support
+test_trail_CFLAGS := -I$(FOUNDATION_VIEW)/kits/support
+test_report_CFLAGS := -I$(FOUNDATION_VIEW)/kits/support
+test_watchdog_CFLAGS := -I$(FOUNDATION_VIEW)/kits/support
 test_watchdog_LDLIBS := -rdynamic
-test_work_CFLAGS := -I$(K)/support
+test_work_CFLAGS := -I$(FOUNDATION_VIEW)/kits/support
 test_work_LDLIBS := -lpthread
 # Thread creation replaced by the test's own, which can fail.
-test_work_start_CFLAGS := -I$(K)/support
+test_work_start_CFLAGS := -I$(FOUNDATION_VIEW)/kits/support
 test_work_start_LDLIBS := -lpthread
 ifeq ($(UNAME_S),Linux)
 test_work_start_LDLIBS += -Wl,--wrap=pthread_create
@@ -243,7 +256,7 @@ ifeq ($(UNAME_S),Linux)
 test_thumb_freshness_LDLIBS := -Wl,--wrap=stat
 endif
 test_report_LDLIBS := -rdynamic
-test_reap_CFLAGS := -I$(K)/support -Isystem/shared/core
+test_reap_CFLAGS := -I$(FOUNDATION_VIEW)/kits/support -I$(FOUNDATION_VIEW)/system/shared/core
 test_reap_SRCS := system/shared/core/tiku_trk_launch.c
 test_lease_LDLIBS := -lutil -lpthread
 test_reclaim_LDLIBS := -lutil -lpthread
@@ -281,7 +294,11 @@ $(BUILD)/tests/test_module_exports: | $(APPS_D)/basic/TikuBasic.so \
 test_deviceprefs_LDLIBS := $(X11_LIBS) -lm
 test_calculator_LDLIBS := $(X11_LIBS) -lm
 test_look_LDLIBS := $(X11_LIBS) -lm
-test_notes_LDLIBS := $(X11_LIBS) -lm
+test_notes_SRCS := $(filter-out apps/notes/tiku_notes.c,$(NOTES_SRC))
+test_notes_LDLIBS := $(X11_LIBS) -lm -pthread
+test_write_SRCS := $(filter-out apps/write/tiku_write.c,$(WRITE_SRC))
+test_write_LDLIBS := $(X11_LIBS) -lm -pthread
+.SECONDARY: $(call objs,$(WRITE_SRC))
 test_hex_SRCS := apps/hex/tiku_hex_model.c
 test_hex_LDLIBS := $(X11_LIBS) -lm
 test_forcequit_LDLIBS := $(X11_LIBS) -lm
@@ -418,8 +435,9 @@ test_legacy_input_LDLIBS := $(X11_LIBS) -lm -ldl $(GC_SECTIONS)
 test_preferences_kit_LDLIBS := $(X11_LIBS) -lm
 test_clipboard_text_LDLIBS := $(X11_LIBS) -lm
 test_host_clipboard_LDLIBS := $(X11_LIBS) -lm
+test_clipboard_offer_LDLIBS := $(X11_LIBS) -lm
 test_formrow_LDLIBS := $(X11_LIBS) -lm
-test_gui_CFLAGS := -Itests/fixtures/boardstub -Iboard/gui -Wno-unused-function
+test_gui_CFLAGS := -I$(FOUNDATION_VIEW)/tests/fixtures/boardstub -Iboard/gui -Wno-unused-function
 test_deskprefs_SRCS   := system/shared/core/tiku_trk_deskprefs.c system/shared/core/tiku_trk_background.c
 
 # The editor kit's suites link the kit, which is not one of the seven
@@ -478,17 +496,120 @@ test_ide_baseline_LDLIBS := $(X11_LIBS) -lm
 # names, the kits it asks for before the seven every test takes, and its
 # own libraries.
 .SECONDEXPANSION:
-$(BUILD)/tests/test_%: $$(call objs,$$(test_$$*_FILE)) $$(call objs,$$(test_$$*_SRCS)) $$(test_$$*_LIBS) $(DESK_LIBS) | $(BUILD)/tests
+$(BUILD)/tests/test_%: $$(call objs,$$(test_$$*_FILE)) $$(call objs,$$(test_$$*_SRCS)) $$(test_$$*_LIBS) $(OPTIONAL_LIBS) $(DESK_LIBS) | $(BUILD)/tests
 	$(CC) $(CFLAGS) -o $@ $(call objs,$(test_$*_FILE)) $(call objs,$(test_$*_SRCS)) \
-	      $(test_$*_LIBS) $(DESK_LIBS) $(LDFLAGS) -lm $(test_$*_LDLIBS)
+	      $(test_$*_LIBS) $(OPTIONAL_LIBS) $(DESK_LIBS) $(LDFLAGS) -lm $(test_$*_LDLIBS)
 
 .PHONY: tests
 tests: $(TESTBINS)
+
+# Document suites link the model alone and never start desktop scripts.
+DOCUMENT_TESTS := test_richdoc_model test_richdoc_styles test_richdoc_faults \
+                 test_richdoc_edit test_richdoc_structure test_richdoc_anchors
+DOCUMENT_TESTS += test_richdoc_ranges
+DOCUMENT_TESTS += test_richdoc_formatting test_richdoc_search
+DOCUMENT_TESTS += test_richoutline
+DOCUMENT_TESTS += test_richlinkscan
+DOCUMENT_TESTS += test_richdoc_lists test_richdoc_links
+DOCUMENT_TESTS += test_richdoc_selection test_richdoc_fragments
+DOCUMENT_TESTS += test_richcmd
+DOCUMENT_TESTS += test_richsession test_richwatch test_richsession_faults
+DOCUMENT_TESTS += test_richsession_observer
+DOCUMENT_TESTS += test_richtext
+DOCUMENT_TESTS += test_richdoc_typing
+DOCUMENT_TESTS += test_richhistory
+DOCUMENT_TESTS += test_richbookmarks
+DOCUMENT_TESTS += test_richlayout
+DOCUMENT_TESTS += test_richlayout_cache
+DOCUMENT_TESTS += test_richlayout_faults
+DOCUMENT_TESTS += test_richview
+DOCUMENT_TESTS += test_richruler
+DOCUMENT_TESTS += test_richview_input
+DOCUMENT_TESTS += test_richpages
+DOCUMENT_TESTS += test_richdoc_images
+DOCUMENT_TESTS += test_richdoc_tables
+DOCUMENT_TESTS += test_richdoc_grid
+DOCUMENT_TESTS += test_richdoc_table_props
+DOCUMENT_TESTS += test_richdoc_cell_drag
+DOCUMENT_TESTS += test_richdoc_pagination
+DOCUMENT_TESTS += test_richrowpages
+DOCUMENT_TESTS += test_richcells
+DOCUMENT_TESTS += test_richcells_navigation
+DOCUMENT_TESTS += test_richcells_paste
+DOCUMENT_TESTS += test_richcells_rich
+DOCUMENT_TESTS += test_richcells_nested
+DOCUMENT_TESTBINS := $(addprefix $(BUILD)/tests/,$(DOCUMENT_TESTS))
+$(DOCUMENT_TESTBINS): $(BUILD)/tests/%: $(OBJ)/tests/kits/%.o $(LIB_DOCUMENT) \
+        $(LIB_INTERFACE)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -o $@ $^ -pthread -lm
+
+.PHONY: test-document
+test-document: $(DOCUMENT_TESTBINS)
+	@for suite in $(DOCUMENT_TESTBINS); do $$suite || exit 1; done
+
+.PHONY: test-document-performance
+test-document-performance: $(BUILD)/tests/test_richperformance
+	$(BUILD)/tests/test_richperformance
+
+# Native persistence faults use separate objects with counted heap/I/O calls.
+RICHIO_SRCS := $(filter kits/translation/tiku_richio%.c \
+    kits/translation/tiku_richhtml%.c \
+    kits/translation/tiku_richimport.c kits/translation/tiku_richmarkup%.c \
+    kits/translation/tiku_png_stream.c \
+    kits/translation/tiku_image.c kits/translation/tiku_jpeg.c \
+    kits/translation/tiku_richclip.c \
+    kits/translation/tiku_richcellclip.c \
+    %/tiku_zip_write.c kits/translation/tiku_archive%.c \
+    %/tiku_xml.c %/tiku_inflate.c %/tiku_inflate_stream.c,$(TRANSLATION) $(DOCUMENT_FORMATS) $(DECK_FORMATS)) \
+    kits/storage/tiku_atomic_file.c kits/support/tiku_digest.c \
+    kits/interface/tiku_markdown.c
+RICHIO_FAULT_SRCS := $(DOCUMENT) $(RICHIO_SRCS) \
+    kits/interface/tiku_text_input.c
+RICHIO_FAULT_OBJS := $(patsubst %.c,\
+    $(OBJ)/tests/fixtures/richio/%.o,$(RICHIO_FAULT_SRCS))
+$(OBJ)/tests/fixtures/richio/%.o: $(FOUNDATION_VIEW)/%.c $(FOUNDATION_VIEW)/tests/fixtures/richio_alloc.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(KIT_INC) -include $(FOUNDATION_VIEW)/tests/fixtures/richio_alloc.h \
+	      -MMD -MP -c -o $@ $(call kit_source,$<)
+test_richio_faults_LIBS := $(RICHIO_FAULT_OBJS)
+$(BUILD)/tests/test_richio_faults: $(RICHIO_FAULT_OBJS)
+
+.PHONY: test-document-files
+test-document-files: $(BUILD)/tests/test_richbookmarksio $(BUILD)/tests/test_richmarkup $(addprefix $(BUILD)/tests/,\
+        test_richio_native test_richio_faults test_richclip test_richcellclip test_zip_write test_richhtml test_png_stream)
+	$(BUILD)/tests/test_png_stream
+	$(BUILD)/tests/test_richmarkup
+	$(BUILD)/tests/test_richbookmarksio
+	$(BUILD)/tests/test_richhtml
+	python3 tests/integration/test_richhtml.py $(BUILD)/tests/test_richhtml
+	$(BUILD)/tests/test_richio_native
+	$(BUILD)/tests/test_richio_faults
+	$(BUILD)/tests/test_richclip
+	$(BUILD)/tests/test_richcellclip
+	$(BUILD)/tests/test_zip_write
 
 .PHONY: test-host-clipboard
 test-host-clipboard: $(BUILD)/tests/test_host_clipboard
 	python3 tests/integration/run_host_clipboard.py
 
+.PHONY: test-host-clipboard-cocoa
+ifeq ($(TIKU_HOST),cocoa)
+$(BUILD)/tests/test_cocoa_clipboard: $(FOUNDATION_VIEW)/tests/kits/test_cocoa_clipboard.m \
+        $(FOUNDATION_VIEW)/kits/interface/tiku_cocoa.m $(LIB_INTERFACE) $(LIB_SUPPORT)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(KIT_INC) -o $@ $< $(LIB_INTERFACE) $(LIB_SUPPORT) $(LDFLAGS) -lm -pthread
+test-host-clipboard-cocoa: $(BUILD)/tests/test_cocoa_clipboard
+	$(BUILD)/tests/test_cocoa_clipboard
+else
+test-host-clipboard-cocoa:
+	@echo 'SKIP: Cocoa clipboard requires a native macOS build'
+endif
+
 .PHONY: test-host-render
 test-host-render: $(BUILD)/tests/test_host_render
 	python3 tests/integration/run_host_clipboard.py $(BUILD)/tests/test_host_render
+
+ifeq ($(UNAME_S),Linux)
+test_print_rpc_LDLIBS := -Wl,--wrap=tiku_remote_session_tell
+endif

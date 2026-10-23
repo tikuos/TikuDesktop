@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from source_layout import source_root
 from unittest.mock import patch
 
 import package
@@ -117,6 +118,23 @@ class LayoutTests(unittest.TestCase):
         self.fixture()
         shutil.copyfile(ROOT / 'Makefile', self.root / 'Makefile')
         shutil.copytree(ROOT / 'mk', self.root / 'mk')
+        for name in ('foundation.lock.json', 'foundation.product.json'):
+            shutil.copy2(ROOT / name, self.root / name)
+        (self.root / 'kits/editor/LICENSE.Scintilla').unlink()
+        foundation = json.loads((ROOT / 'build/foundation/identity.json').read_text())['source_root']
+        self.write('foundation.local.mk', 'FOUNDATION_ROOT := ' + foundation + '\n')
+        profile = json.loads((ROOT / 'foundation.product.json').read_text())
+        inputs = list(profile['overrides'])
+        if profile.get('shell'):
+            inputs.append('system/product/tiku_shell_product.h')
+        if profile.get('applications'):
+            inputs.append('apps/shared/tiku_app_product.h')
+        if profile['document_provider'] == 'kintsugi-advanced':
+            inputs.append('kits/document/tiku_richdoc.h')
+        if profile.get('office_shapes'):
+            inputs.append(profile['office_shapes'])
+        for relative in inputs:
+            self.write(relative, (ROOT / relative).read_text())
         self.write('tests/kits/test_placeholder.c')
         self.write('tools/_prepare_build.py', (ROOT / 'tools/prepare_build.py').read_text())
         self.write('tools/prepare_build.py', 'import time\n'
@@ -331,11 +349,11 @@ class LayoutTests(unittest.TestCase):
                       'system/deskbar', 'system/runner', 'system/supervisor',
                       'tests/system', 'tests/kits', 'tests/apps', 'tests/integration',
                       'examples/apps', 'examples/diagnostics'):
-            self.assertTrue(list((ROOT / group).rglob('*.c')), group)
+            self.assertTrue(list(((source_root(ROOT) if group.split('/')[0] in {'system','kits','apps','tests'} else ROOT) / group).rglob('*.c')), group)
         inventory = package.manifests(ROOT)
         self.assertTrue({'basic', 'c', 'editor', 'terminal', 'monitor', 'vfs'} <=
                         set(inventory))
-        suites = list((ROOT / 'tests').glob('*/test_*.c'))
+        suites = list((source_root(ROOT) / 'tests').glob('*/test_*.c'))
         self.assertEqual(len(suites), len({path.name for path in suites}))
 
     def test_fixture_bundle_paths_use_runtime_ids(self):

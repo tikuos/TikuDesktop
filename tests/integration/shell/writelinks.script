@@ -1,0 +1,43 @@
+# shell: desktop
+# prefs: factory
+# mkdir: /tmp/trk_home
+# file: ~/links.html <p><a href="https://example.org">One</a> gap <a href="https://example.net">Two</a></p><p><a href="mailto:a@example.org">Three</a></p>
+wait 25
+click 980 30
+wait 4
+menu-pick Documents
+wait 4
+menu-pick TikuWrite
+wait 100
+key o ctrl
+wait 25
+expect-title Open
+click 400 200
+wait 4
+click 675 413
+wait 70
+expect-no-title Open
+click 292 8
+wait 5
+expect-menu Next hyperlink
+menu-pick Next hyperlink
+wait 30
+expect-same-as-redraw
+expect-pixel 135 128 bbd0e7
+shot /tmp/tiku-write-link-first.png
+click 292 8
+wait 5
+menu-pick Next hyperlink
+wait 30
+expect-same-as-redraw
+expect-pixel 185 128 bbd0e7
+expect-pixel 135 128 ffffff
+shot /tmp/tiku-write-link-second.png
+click 292 8
+wait 5
+expect-menu Previous hyperlink
+menu-pick Previous hyperlink
+wait 30
+expect-same-as-redraw
+expect-pixel 135 128 bbd0e7
+shot /tmp/tiku-write-link-previous.png

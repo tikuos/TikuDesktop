@@ -18,6 +18,11 @@ class SourceModuleTests(unittest.TestCase):
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
 
+    def test_composed_model_is_audited(self):
+        self.source("build/foundation/apps/reader/tiku_reader_document.c",
+                    '#include "tiku_window.h"\n')
+        self.assertTrue(violations(self.root))
+
     def test_independent_model(self):
         self.source("apps/ide/tiku_ide_project.c",
                     '#include "tiku_ide_project.h"\n')
@@ -80,10 +85,15 @@ class SourceModuleTests(unittest.TestCase):
 
 class BuildGraphTests(unittest.TestCase):
     def test_custom_flags_keep_test_entry_point_disabled(self):
-        result = subprocess.run(
-            ["make", "--no-print-directory", "-B", "-n", "BUILD=build",
-             "CFLAGS=-O0", "build/obj/apps/ide/tiku_ide_app.o"],
-            cwd=ROOT, text=True, capture_output=True, check=True)
+        stamp = ROOT / "build/foundation/config.stamp"
+        before = (stamp.read_bytes(), stamp.stat().st_mtime_ns) if stamp.is_file() else None
+        with tempfile.TemporaryDirectory(prefix="source-graph-build-") as build:
+            result = subprocess.run(
+                ["make", "--no-print-directory", "-B", "-n", "BUILD=" + build,
+                 "CFLAGS=-O0", build + "/obj/apps/ide/tiku_ide_app.o"],
+                cwd=ROOT, text=True, capture_output=True, check=True)
+        after = (stamp.read_bytes(), stamp.stat().st_mtime_ns) if stamp.is_file() else None
+        self.assertEqual(after, before)
         compile_lines = [line for line in result.stdout.splitlines()
                          if " -c " in line and "tiku_ide_app.c" in line]
         self.assertEqual(len(compile_lines), 1)

@@ -13,12 +13,15 @@ Run from the repository root: python3 tools/icons/gen_icons.py
 """
 import os
 import re
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from source_layout import source_path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SP = os.path.join(HERE, os.pardir, os.pardir, "assets", "icons", "hvif")
 # Both assets and kits are relative to the repository root.
-OUT = os.path.join(HERE, os.pardir, os.pardir, "kits", "translation",
-                   "tiku_icons.c")
+OUT = str(source_path(Path(HERE).parents[1], "kits/translation/tiku_icons.c"))
 
 # Inventory order: the general kinds first, then the volumes and places,
 # then the specialised folders and the odds and ends.

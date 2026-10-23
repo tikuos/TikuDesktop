@@ -5,12 +5,14 @@
 """Export the application SDK without system or application implementations."""
 from pathlib import Path
 import argparse
+import hashlib
 import json
 import platform
 import re
 import shlex
 import shutil
 import sys
+import subprocess
 import tempfile
 
 import package as desktop_package
@@ -19,7 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PRODUCT = 'TikuDesktop'
 PC_NAME = 'tiku-sdk.pc'
 INCLUDE = re.compile(r'^\s*#\s*include\s*"([^"]+)"', re.M)
-ORDER = ('editor', 'application', 'translation', 'deck', 'document',
+OPTIONAL = {'document', 'deck', 'document_formats', 'deck_formats', 'office_shapes'}
+ORDER = ('editor', 'application', 'deck_formats', 'document_formats', 'office_shapes', 'translation', 'deck', 'document',
          'interface', 'storage', 'device', 'media', 'support')
 
 
@@ -27,6 +30,8 @@ def public_headers(root):
     """Select headers whose local include graph does not reach private headers."""
     headers = {}
     for path in (root / 'kits').glob('*/*.h'):
+        if path.name in headers and path.resolve() == headers[path.name].resolve():
+            continue
         if path.name in headers:
             raise RuntimeError('Duplicate SDK header: ' + path.name)
         headers[path.name] = path
@@ -34,7 +39,7 @@ def public_headers(root):
     dependencies = {name: set(INCLUDE.findall(path.read_text()))
                     for name, path in headers.items()}
     while True:
-        rejected = {name for name in headers if dependencies[name] & private}
+        rejected = {name for name in headers if dependencies[name] & private or dependencies[name] - headers.keys()}
         if rejected <= private:
             break
         private |= rejected
@@ -47,7 +52,7 @@ def sdk_flags(flags):
     for flag in shlex.split(flags):
         if flag.startswith(('-O', '-g')):
             continue
-        if flag.startswith('kits/'):
+        if flag.endswith('/tiku_sdk_identity.h') or flag.endswith('/tiku_darwin.h') or flag.startswith('kits/'):
             flag = '$(SDK_ROOT)/include/' + Path(flag).name
         if str(ROOT) in flag:
             raise RuntimeError('SDK compiler flags contain a source checkout path')
@@ -74,6 +79,16 @@ def publish(stage, destination):
         shutil.rmtree(previous)
 
 
+def source_state(root):
+    """Record Git state when the foundation is the repository root."""
+    top = subprocess.run(['git', '-C', str(root), 'rev-parse', '--show-toplevel'], capture_output=True, text=True)
+    if top.returncode or Path(top.stdout.strip()).resolve() != root.resolve():
+        return dict(source_revision=None, source_dirty=None)
+    revision = subprocess.run(['git', '-C', str(root), 'rev-parse', '--verify', 'HEAD'], capture_output=True, text=True)
+    status = subprocess.run(['git', '-C', str(root), 'status', '--porcelain'], capture_output=True, text=True)
+    return dict(source_revision=revision.stdout.strip() or None, source_dirty=bool(status.stdout))
+
+
 def export(args, root=ROOT):
     """Stage public headers, PIC archives, notices and relocatable build metadata."""
     args.output = args.output.absolute()
@@ -89,7 +104,7 @@ def export(args, root=ROOT):
             (stage / 'include').mkdir(parents=True)
             (stage / 'lib/pkgconfig').mkdir(parents=True)
             (stage / 'licenses').mkdir()
-            headers = public_headers(root)
+            headers = public_headers(getattr(args, 'source', None) or root)
             for name, source in headers.items():
                 shutil.copy2(source, stage / 'include' / name)
             libraries = {}
@@ -99,10 +114,10 @@ def export(args, root=ROOT):
                 libraries[library.stem.removeprefix('libtiku_')] = library
                 shutil.copy2(library, stage / 'lib' / library.name)
             order = tuple(k for k in ORDER if k in libraries)
-            required = set(ORDER) - {'deck', 'document'}
-            if set(libraries) - set(ORDER) or not required <= set(libraries):
+            required = set(ORDER) - OPTIONAL
+            if set(libraries) - set(ORDER) or not required <= set(libraries) or len(libraries) != len(args.libraries):
                 raise RuntimeError('SDK requires one PIC archive for each kit')
-            for source in (root / 'kits').glob('*/LICENSE*'):
+            for source in ((getattr(args, 'source', None) or root) / 'kits').glob('*/LICENSE*'):
                 if source.is_file():
                     target = stage / 'licenses' / source.parent.name
                     target.mkdir(exist_ok=True)
@@ -117,6 +132,29 @@ def export(args, root=ROOT):
             metadata = dict(version='0.01', product=PRODUCT, abi=abi,
                             system=platform.system(), machine=platform.machine(),
                             host=args.host, kit_names=' '.join(order), libraries=[libraries[k].name for k in order])
+            identity = {}
+            if getattr(args, 'source', None):
+                identity = json.loads((args.source / 'identity.json').read_text())
+                foundation_root = Path(identity['source_root'])
+                sys.path.insert(0, str(foundation_root / 'tools'))
+                from kit_packages import validate_selection
+                validate_selection(identity['document_provider'], libraries)
+                header_provider = 'document' in libraries
+                if ('tiku_richdoc.h' in headers) != header_provider:
+                    raise RuntimeError('Document provider headers and archives differ')
+                identity.update(source_state(foundation_root))
+                notices = stage / 'licenses/foundation'
+                shutil.copytree(foundation_root / 'licenses', notices)
+                for name in ('LICENSE', 'NOTICE'):
+                    if (foundation_root / name).is_file():
+                        shutil.copy2(foundation_root / name, notices / name)
+                shutil.copy2(args.source / 'tiku_sdk_identity.h', stage / 'include/tiku_sdk_identity.h')
+            metadata.update({key: value for key, value in identity.items()
+                             if key not in {'source_root', 'flags'}})
+            metadata['header_sha256'] = {header.name: hashlib.sha256(header.read_bytes()).hexdigest()
+                                         for header in (stage / 'include').glob('*.h')}
+            metadata['archive_sha256'] = {library.name: hashlib.sha256(library.read_bytes()).hexdigest()
+                                          for library in libraries.values()}
             (stage / 'sdk.json').write_text(json.dumps(metadata, indent=2) + '\n')
             cflags = ['-I$(SDK_ROOT)/include', *sdk_flags(args.cflags)]
             ldflags = shlex.split(args.ldflags)
@@ -124,8 +162,8 @@ def export(args, root=ROOT):
                 raise RuntimeError('SDK linker flags contain a source checkout path')
             config = ['# Application SDK configuration; paths follow this file.\n',
                       'SDK_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))\n']
-            for name in ('version', 'abi', 'system', 'machine', 'host', 'kit_names'):
-                config.append(f'SDK_{name.upper()} := {metadata[name]}\n')
+            for name in ('version', 'abi', 'system', 'machine', 'host', 'kit_names', 'foundation_id', 'foundation_revision', 'document_provider', 'sdk_identity'):
+                config.append(f'SDK_{name.upper()} := {metadata.get(name, "")}\n')
             config += ['SDK_CFLAGS := ' + shlex.join(cflags) + '\n',
                        'SDK_LDFLAGS := ' + shlex.join(ldflags) + '\n']
             (stage / 'sdk.mk').write_text(''.join(config))
@@ -133,9 +171,24 @@ def export(args, root=ROOT):
                   'includedir=${prefix}/include\n', 'Name: ' + PRODUCT + ' SDK\n',
                   'Description: Native application kits\n', 'Version: 0.01\n',
                   'Cflags: ' + shlex.join(cflags).replace('$(SDK_ROOT)', '${prefix}') + '\n',
-                  'Libs: -L${libdir} ' + ' '.join('-ltiku_' + k for k in order)
+                  'Libs: -L${libdir} ' + ' '.join('-ltiku_' + k for k in order if k not in OPTIONAL)
                   + ' ' + shlex.join(ldflags) + '\n']
             (stage / 'lib/pkgconfig' / PC_NAME).write_text(''.join(pc))
+            for kit in order:
+                if kit not in OPTIONAL:
+                    continue
+                from kit_packages import REQUIRES
+                closure = {kit}
+                while True:
+                    expanded = closure | set().union(*(REQUIRES.get(k, set()) for k in closure))
+                    if expanded == closure:
+                        break
+                    closure = expanded
+                selected = [k for k in order if k in closure or k not in OPTIONAL]
+                content = ''.join(pc).replace('Name: ' + PRODUCT + ' SDK', 'Name: ' + PRODUCT + ' ' + kit)
+                base_links = ' '.join('-ltiku_' + k for k in order if k not in OPTIONAL)
+                content = content.replace(base_links, ('-Wl,-u,' + ('_' if platform.system() == 'Darwin' else '') + 'dml_custom_strings ' if 'office_shapes' in closure else '') + ' '.join('-ltiku_' + k for k in selected))
+                (stage / 'lib/pkgconfig' / ('tiku-' + kit + '.pc')).write_text(content)
         publish(stage, args.output)
     print('Application SDK:', args.output)
 
@@ -145,6 +198,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--copy', type=Path)
+    parser.add_argument('--source', type=Path)
     parser.add_argument('--cflags', default='')
     parser.add_argument('--ldflags', default='')
     parser.add_argument('--host', default='x11')

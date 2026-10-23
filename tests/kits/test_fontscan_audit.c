@@ -1,5 +1,5 @@
 /* Font names and fallback coverage follow the encoded mappings. */
-#include "../../kits/translation/tiku_fontset_scan.c"
+#include <tiku_fontset_scan.c>
 static void put16(unsigned char *p, unsigned n) { p[0] = n >> 8; p[1] = n; }
 int main(void)
 {

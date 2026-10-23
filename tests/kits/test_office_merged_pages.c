@@ -1,6 +1,6 @@
 /* Merged cells continue on the next page with bounded background geometry. */
 #define pg_next_column audit_next_column
-#include "../../kits/translation/tiku_office_table.c"
+#include <tiku_office_table.c>
 #undef pg_next_column
 #include <assert.h>
 #include <stdio.h>

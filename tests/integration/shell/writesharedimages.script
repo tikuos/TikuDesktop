@@ -1,0 +1,44 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/documents
+# Repeated pictures survive native save and reopening in a new process.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title picture.tkrd
+key a ctrl
+key c ctrl
+wait 25
+key End ctrl
+key v ctrl
+wait 25
+key v ctrl
+wait 25
+expect-title * picture.tkrd
+expect-pixel 135 118 ff0000
+expect-pixel 175 118 ff0000
+expect-pixel 215 118 ff0000
+expect-same-as-redraw
+key s ctrl
+wait 100
+expect-title picture.tkrd
+key w ctrl
+wait 20
+expect-no-title TikuWrite
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title picture.tkrd
+expect-pixel 135 118 ff0000
+expect-pixel 175 118 ff0000
+expect-pixel 215 118 ff0000
+expect-pixel 215 128 0000ff
+expect-same-as-redraw
+shot /tmp/tiku-write-shared-pictures.png
+key z ctrl
+wait 15
+expect-title picture.tkrd
+expect-same-as-redraw

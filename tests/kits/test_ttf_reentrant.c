@@ -1,6 +1,6 @@
 /* A nested render must not overwrite the outer glyph's outline. */
 #define tiku_path_new audit_path_new
-#include "../../kits/interface/tiku_ttf.c"
+#include <tiku_ttf.c>
 #undef tiku_path_new
 #include <assert.h>
 tiku_path_t *tiku_path_new(void);

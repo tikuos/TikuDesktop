@@ -1,0 +1,44 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/documents
+# Export an embedded picture without changing the native file or save state.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title picture.tkrd
+click 75 8
+wait 8
+expect-menu Export HTML...
+menu-pick Export HTML...
+wait 20
+key Return
+wait 70
+expect-title picture.tkrd
+expect-file-has /tmp/trk_home/document.html data:image/png;base64,
+expect-file-has /tmp/trk_home/document.html https://example.org/camera
+expect-same-as-redraw
+shot /tmp/tiku-write-html-picture.png
+key o ctrl
+wait 25
+expect-title Open
+key h ctrl
+wait 20
+shot /tmp/tiku-write-html-open-panel.png
+click 400 220
+wait 4
+click 675 413
+wait 70
+expect-no-title Open
+expect-title * Untitled
+expect-pixel 135 118 ff0000
+expect-pixel 135 128 0000ff
+expect-same-as-redraw
+shot /tmp/tiku-write-html-picture-reopened.png
+key w ctrl
+wait 15
+expect-title * Untitled
+key Escape
+wait 15
+expect-title * Untitled

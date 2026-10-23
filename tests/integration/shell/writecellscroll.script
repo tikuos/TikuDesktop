@@ -1,0 +1,43 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/documents
+# A stationary captured pointer scrolls the table without editing its content.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title report.tkrd
+press 904 646
+move 704 366
+release 704 366
+wait 30
+expect-same-as-redraw
+expect-pixel 260 140 ff0000
+expect-pixel 132 310 ffffff
+shot /tmp/tiku-write-cellscroll-before.png
+press 150 140 1 alt
+move 250 410 1 alt
+wait 100
+expect-title report.tkrd
+expect-same-as-redraw
+expect-pixel 132 120 bbd0e7
+expect-pixel 132 310 bbd0e7
+shot /tmp/tiku-write-cellscroll-down.png
+move 150 75 1 alt
+wait 100
+expect-title report.tkrd
+expect-same-as-redraw
+expect-pixel 260 124 ff0000
+expect-pixel 132 310 ffffff
+shot /tmp/tiku-write-cellscroll-up.png
+release 150 75 1 alt
+wait 15
+expect-title report.tkrd
+expect-same-as-redraw
+expect-pixel 260 124 ff0000
+expect-pixel 132 310 ffffff
+key Escape
+key w ctrl
+wait 15
+expect-no-title TikuWrite

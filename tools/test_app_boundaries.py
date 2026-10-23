@@ -52,6 +52,12 @@ class BoundaryTests(unittest.TestCase):
         self.source("system/desktop/main.c", '#include "tiku_trk_desktop_private.h"\n')
         self.assertEqual(violations(self.root, []), [])
 
+    def test_active_shell_view_is_checked(self):
+        """A composed shell cannot hide an app import behind an inactive copy."""
+        self.source("system/desktop/main.c", "")
+        self.source("build/foundation/system/desktop/main.c", '#include "apps/editor/main.c"\n')
+        self.assertTrue(violations(self.root, []))
+
 
 if __name__ == "__main__":
     unittest.main()

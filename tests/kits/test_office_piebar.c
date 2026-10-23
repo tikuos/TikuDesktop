@@ -1,6 +1,6 @@
 /* The secondary stacked bar stays inside its requested rectangle. */
 #define ch_rect audit_rect
-#include "../../kits/translation/tiku_office_chart_plot.c"
+#include <tiku_office_chart_plot.c>
 #undef ch_rect
 static float low = 1e9, high = -1e9;
 void audit_rect(ch_chart_t *k, const ch_box_t *b, const dml_fill_t *f,

@@ -25,7 +25,7 @@ counted_malloc(size_t bytes)
     return malloc(bytes);
 }
 #define malloc counted_malloc
-#include "../../kits/interface/tiku_textview.c"
+#include <tiku_textview.c>
 #undef malloc
 
 static int fails;

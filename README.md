@@ -1,16 +1,18 @@
 # TikuDesktop
 
-TikuDesktop, its applications, and its reusable UI/device kits for Linux and
-macOS. This is an independent repository, normally checked out at
-`tikuOS/applications/`.
+TikuDesktop is a desktop for Linux and macOS with applications and TikuOS board
+integration. Its repository is `https://github.com/tikuos/TikuDesktop.git`.
+Shared kits, matching applications and shell components come from
+[Stomme](https://github.com/tikuos/Stomme).
 
 ## Where things belong
 
 | Directory | Contents |
 | --- | --- |
-| `system/` | Desktop and Tracker shells, Deskbar, shared shell services, application runner, supervisor |
+| `foundation/` | Stomme Git submodule pinned to a reviewed commit |
+| `system/` | Product shell configuration and board extensions |
 | `apps/` | End-user applications; each runs in a separate process through the public kits |
-| `kits/` | Seven reusable libraries: support, device, storage, interface, translation, application, media |
+| `kits/` | Root build compatibility entry point and product icon registration |
 | `examples/` | Demonstration applications and diagnostic galleries; not production apps |
 | `tests/` | System, kit, application and integration tests, fixtures, test drivers |
 | `assets/` | Help, translations, application artwork, sounds and icon sources |
@@ -26,7 +28,25 @@ The [functional module guide](docs/architecture/source-modules.md) maps source
 filenames to responsibilities within the IDE, Editor, Reader, Bench, Console,
 desktop jobs and desktop commands.
 
-## Build and run
+Shared implementations come from the pinned Stomme submodule. Recursive cloning
+initializes it. A local development checkout can be selected with
+`FOUNDATION_ROOT=/path/to/Stomme` or an ignored `foundation.local.mk`. See [source ownership](docs/architecture/foundation.md) for the
+foundation, SDK and product contribution commands.
+
+## Clone and build
+
+```sh
+git clone --recurse-submodules https://github.com/tikuos/TikuDesktop.git
+cd TikuDesktop
+sh hygiene/install_hooks.sh
+```
+
+For an existing clone, run `git submodule update --init --recursive` after
+checking out a product revision. Git records Stomme's exact commit at
+`foundation/`; `foundation.lock.json` checks its selected source-content hash.
+Follow [the contribution rules](AGENTS.md) and Stomme's
+[commit guide](https://github.com/tikuos/Stomme/blob/main/hygiene/commit-style.md).
+
 
 On Linux, install a C toolchain, Make, Python 3 and X11 development libraries.
 macOS uses the native Cocoa window backend and the Xcode command-line tools;
@@ -51,10 +71,15 @@ without the desktop. `TikuTracker/` and `kits/` forward to the root build.
 The `apps/` subtree builds independently against an exported SDK; see
 [independent application builds](docs/architecture/application-builds.md).
 
-The optional `tiku-basic` host interpreter is compiled from
-`../basic/tiku_basic.c`. Set `TIKUOS=/path/to/tikuOS` if the
-firmware checkout is elsewhere; without it, that helper is skipped with a
-message and the other products still build.
+The optional `tiku-basic` host interpreter uses the firmware interpreter source.
+Set `TIKUOS=/path/to/tikuOS` to select it. The parent directory is the default
+for checkouts inside a firmware tree. Without that source, the helper is skipped;
+the desktop, SDK, application modules and comment checks remain available.
+
+To provide board-side applications to a TikuOS firmware checkout, clone this
+repository recursively into its ignored `applications/` directory. The board
+overlay compiles shared GUI models from `applications/foundation/kits/`.
+See [board applications](board/README.md).
 
 ## Generated output
 
@@ -115,7 +140,7 @@ TRK_SHELL_ONLY=about.script sh tests/integration/shell/run.sh
 The driven UI tests use isolated homes and offscreen rendering. On Linux,
 native-window tests use Xvfb or Xephyr when installed. Hardware lanes are
 opt-in: `TRK_PORT=/dev/ttyACM0 make test`. Set `TIKU_HOST=x11` explicitly to
-use X11 on macOS; use a clean build when changing the host backend.
+use X11 on macOS; rebuild when changing the host backend.
 
 Production shells in `build/runtime/system/` refuse `-script`. The test
 interpreter exists only in the `build/dev/` versions. See

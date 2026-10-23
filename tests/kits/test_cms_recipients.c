@@ -2,7 +2,7 @@
 #define main original_cms_main
 #include "test_cms.c"
 #undef main
-#include "../../kits/support/tiku_cms.c"
+#include <tiku_cms.c>
 #include <assert.h>
 int main(void)
 {

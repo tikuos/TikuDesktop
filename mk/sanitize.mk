@@ -18,6 +18,24 @@
 SAN      := $(BUILD)/sanitize
 SANFLAGS := -O1 -g -fsanitize=address,undefined \
             -fno-sanitize-recover=undefined -fno-omit-frame-pointer
+
+.PHONY: test-host-clipboard-sanitize
+ifeq ($(TIKU_HOST),x11)
+$(SAN)/test_host_clipboard: $(SAN)/tests/kits/test_host_clipboard.o \
+        $(SAN)/kits/interface/tiku_x11_clipboard.o \
+        $(SAN)/kits/interface/tiku_clipboard.o $(LIB_INTERFACE) $(LIB_SUPPORT)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) $(X11_LIBS) -lm -pthread
+$(SAN)/test_clipboard_offer: $(SAN)/tests/kits/test_clipboard_offer.o \
+        $(SAN)/kits/interface/tiku_clipboard.o $(LIB_INTERFACE) $(LIB_SUPPORT)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) $(X11_LIBS) -lm -pthread
+test-host-clipboard-sanitize: $(SAN)/test_host_clipboard $(SAN)/test_clipboard_offer
+	ASAN_OPTIONS=detect_leaks=0 python3 tests/integration/run_host_clipboard.py $(SAN)/test_host_clipboard
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_clipboard_offer
+else
+test-host-clipboard-sanitize:
+	@echo 'SKIP: native X11 clipboard sanitizer requires the X11 host'
+endif
+
 SAN_SRCS := $(filter-out %/tiku_pdf_view.c,$(filter \
                      kits/translation/tiku_pdf_%.c %/tiku_inflate.c \
                      %/tiku_vector_raster.c kits/translation/tiku_circuit%.c \
@@ -28,9 +46,10 @@ SAN_SRCS := $(filter-out %/tiku_pdf_view.c,$(filter \
                      kits/translation/tiku_jpx%.c \
                      kits/translation/tiku_office%.c %/tiku_xml.c \
                      kits/translation/tiku_fontset%.c,\
-                     $(TRANSLATION))) \
+                     $(TRANSLATION) $(DOCUMENT_FORMATS) $(DECK_FORMATS))) \
             $(filter %/tiku_ttf.c %/tiku_cff.c %/tiku_type1.c \
-                     %/tiku_glyphpath.c %/tiku_motion.c,$(INTERFACE)) \
+                     %/tiku_glyphpath.c %/tiku_motion.c \
+                     %/tiku_vector_raster.c,$(INTERFACE)) \
             $(filter %/tiku_dl.c %/tiku_ui.c %/tiku_textview.c \
                      %/tiku_menu.c,$(INTERFACE)) \
             $(filter %/tiku_query.c %/tiku_state.c %/tiku_attr.c \
@@ -62,6 +81,7 @@ SAN_AUDIT49_TESTS := test_cipher_wipe test_cmap_overlap test_cms_recipients \
     test_ttf_reentrant
 SAN_TESTS += $(SAN_AUDIT49_TESTS)
 SAN_REGRESSION_TESTS := test_ui_regressions test_editor_regressions \
+                        test_remote_snapshot test_shm \
                         test_storage_regressions test_link_tcp test_ns_walk \
                         test_circuit_audit test_archive_audit test_icon_audit \
                         test_storage_audit test_textview_audit test_cms_depth \
@@ -121,20 +141,20 @@ $(SAN_KIT_TEST_OBJS):
 
 # These suites include their viewer sources directly. Rebuild when an
 # implementation fragment changes, not only when the test file changes.
-$(SAN)/tests/apps/test_pdf_viewer.o: $(PDFVIEW_SRC) \
-        $(wildcard apps/pdf/*.h apps/pdf/*.inl)
-$(SAN)/tests/apps/test_archive_viewer.o: $(ARCVIEW_SRC) \
-        $(wildcard apps/archive/*.h apps/archive/*.inl)
+$(SAN)/tests/apps/test_pdf_viewer.o: $(addprefix $(FOUNDATION_VIEW)/,$(PDFVIEW_SRC)) \
+        $(wildcard $(FOUNDATION_VIEW)/apps/pdf/*.h $(FOUNDATION_VIEW)/apps/pdf/*.inl)
+$(SAN)/tests/apps/test_archive_viewer.o: $(addprefix $(FOUNDATION_VIEW)/,$(ARCVIEW_SRC)) \
+        $(wildcard $(FOUNDATION_VIEW)/apps/archive/*.h $(FOUNDATION_VIEW)/apps/archive/*.inl)
 $(SAN)/tests/apps/test_diff_viewer.o: \
-        $(wildcard apps/diff/*.c apps/diff/*.h apps/diff/*.inl)
-$(SAN)/tests/apps/test_grab_app.o: $(wildcard apps/grab/*.c apps/grab/*.h)
+        $(wildcard $(FOUNDATION_VIEW)/apps/diff/*.c $(FOUNDATION_VIEW)/apps/diff/*.h $(FOUNDATION_VIEW)/apps/diff/*.inl)
+$(SAN)/tests/apps/test_grab_app.o: $(wildcard $(FOUNDATION_VIEW)/apps/grab/*.c $(FOUNDATION_VIEW)/apps/grab/*.h)
 $(SAN)/tests/apps/test_office_viewer.o: \
-        $(wildcard apps/office/*.c apps/office/*.h apps/office/*.inl)
-$(SAN)/tests/apps/test_sdr.o: $(wildcard apps/sdr/*.c apps/sdr/*.h)
+        $(wildcard $(FOUNDATION_VIEW)/apps/office/*.c $(FOUNDATION_VIEW)/apps/office/*.h $(FOUNDATION_VIEW)/apps/office/*.inl)
+$(SAN)/tests/apps/test_sdr.o: $(wildcard $(FOUNDATION_VIEW)/apps/sdr/*.c $(FOUNDATION_VIEW)/apps/sdr/*.h)
 
 $(addprefix $(SAN)/,$(SAN_APP_TESTS)): $(SAN)/test_%: \
-        $(SAN)/tests/apps/test_%.o $(SAN_OBJS) $(DESK_LIBS)
-	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_OBJS) $(DESK_LIBS) \
+        $(SAN)/tests/apps/test_%.o $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS) \
 	      $(LDFLAGS) -lm $(test_$*_LDLIBS)
 
 # TikuCircuit's suite links the app's sources, instrumented too; the
@@ -142,40 +162,40 @@ $(addprefix $(SAN)/,$(SAN_APP_TESTS)): $(SAN)/test_%: \
 # built for their failing allocator as in tests.mk.
 SAN_CIRCUIT_OBJS := $(patsubst %.c,$(SAN)/%.o,$(CIRCUIT_SRC))
 $(SAN)/test_circuit_viewer: $(SAN)/tests/apps/test_circuit_viewer.o \
-        $(SAN_CIRCUIT_OBJS) $(SAN_OBJS) $(DESK_LIBS)
+        $(SAN_CIRCUIT_OBJS) $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_CIRCUIT_OBJS) $(SAN_OBJS) \
-	      $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
-$(SAN)/tests/fixtures/vector_faults.o: kits/translation/tiku_vector_raster.c \
-        kits/translation/tiku_vector_raster.h
+	      $(OPTIONAL_LIBS) $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
+$(SAN)/tests/fixtures/vector_faults.o: $(FOUNDATION_VIEW)/kits/interface/tiku_vector_raster.c \
+        $(FOUNDATION_VIEW)/kits/translation/tiku_vector_raster.h
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(SANFLAGS) $(KIT_INC) -DTIKU_VECTOR_TEST_ALLOC \
-	      -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $(SANFLAGS) $(KIT_INC) $(APP_INC) -DTIKU_VECTOR_TEST_ALLOC \
+	      -MMD -MP -c -o $@ $(call kit_source,$<)
 $(SAN)/test_vector_faults: $(SAN)/tests/kits/test_vector_faults.o \
-        $(SAN)/tests/fixtures/vector_faults.o $(DESK_LIBS)
+        $(SAN)/tests/fixtures/vector_faults.o $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm
-$(SAN)/tests/fixtures/surface_alloc.o: kits/interface/tiku_gfx.c
+$(SAN)/tests/fixtures/surface_alloc.o: $(FOUNDATION_VIEW)/kits/interface/tiku_gfx.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(SANFLAGS) $(KIT_INC) \
-	      -Dmalloc=tiku_test_surface_malloc -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $(SANFLAGS) $(KIT_INC) $(APP_INC) \
+	      -Dmalloc=tiku_test_surface_malloc -MMD -MP -c -o $@ $(call kit_source,$<)
 $(SAN)/test_surface_alloc: $(SAN)/tests/kits/test_surface_alloc.o \
-        $(SAN)/tests/fixtures/surface_alloc.o $(DESK_LIBS)
+        $(SAN)/tests/fixtures/surface_alloc.o $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm
 $(SAN)/test_sys_frames: $(SAN)/tests/kits/test_sys_frames.o \
-        $(SAN)/kits/support/tiku_sys_linux.o $(DESK_LIBS)
+        $(SAN)/kits/support/tiku_sys_linux.o $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm
 SAN_CIRCUIT_FAULT_OBJS := $(patsubst kits/translation/%.c,\
                               $(SAN)/tests/fixtures/circuit_faults/%.o,\
                               $(CIRCUIT_FAULT_SRCS))
-$(SAN)/tests/fixtures/circuit_faults/%.o: kits/translation/%.c \
-        tests/fixtures/circuit_alloc.h
+$(SAN)/tests/fixtures/circuit_faults/%.o: $(FOUNDATION_VIEW)/kits/translation/%.c \
+        $(FOUNDATION_VIEW)/tests/fixtures/circuit_alloc.h
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(SANFLAGS) $(KIT_INC) \
-	      -include tests/fixtures/circuit_alloc.h -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $(SANFLAGS) $(KIT_INC) $(APP_INC) \
+	      -include $(FOUNDATION_VIEW)/tests/fixtures/circuit_alloc.h -MMD -MP -c -o $@ $(call kit_source,$<)
 $(SAN)/test_circuit_faults: $(SAN)/tests/kits/test_circuit_faults.o \
         $(SAN_CIRCUIT_FAULT_OBJS) \
         $(filter-out $(SAN)/kits/translation/tiku_circuit%.o \
                      $(SAN)/kits/translation/tiku_xml.o,$(SAN_OBJS)) \
-        $(DESK_LIBS)
+        $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
 # Reader's controllers and document parser are instrumented too; the image
@@ -196,58 +216,58 @@ HTML_SAN_TESTS := test_doc_html test_doc_css test_doc_fonts test_doc_flow \
 SAN_TESTS += $(HTML_SAN_TESTS)
 SAN_LEAK_TESTS += $(HTML_SAN_TESTS)
 $(addprefix $(SAN)/,$(HTML_SAN_TESTS)): $(SAN)/%: $(SAN)/tests/kits/%.o \
-        $(SAN_READER_KIT_OBJS) $(SAN_OBJS) $(DESK_LIBS)
+        $(SAN_READER_KIT_OBJS) $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm
 $(SAN)/test_marker: $(SAN_MARKER_OBJS)
 $(addprefix $(SAN)/,$(SAN_READER_TESTS)): $(SAN)/test_%: \
         $(SAN)/tests/apps/test_%.o $(SAN_READER_OBJS) $(SAN_READER_KIT_OBJS) \
-        $(SAN_OBJS) $(DESK_LIBS)
+        $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< \
 	      $(if $(filter test_marker,$(@F)),$(SAN_MARKER_OBJS)) \
 	      $(SAN_READER_OBJS) $(SAN_READER_KIT_OBJS) \
-	      $(SAN_OBJS) $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
+	      $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
 # The allocation suite links the document model alone.
 SAN_READER_MODEL_OBJS := $(SAN)/apps/reader/tiku_reader_document.o
 $(SAN)/test_reader_allocations: $(SAN)/tests/apps/test_reader_allocations.o \
         $(SAN_READER_MODEL_OBJS) $(SAN_READER_KIT_OBJS) $(SAN_OBJS) \
-        $(DESK_LIBS)
+        $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_READER_MODEL_OBJS) \
-	      $(SAN_READER_KIT_OBJS) $(SAN_OBJS) $(DESK_LIBS) $(LDFLAGS) -lm \
+	      $(SAN_READER_KIT_OBJS) $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS) $(LDFLAGS) -lm \
 	      $(X11_LIBS)
 
 # Editor links its own sources, instrumented like the readers.
 SAN_EDITOR_OBJS := $(patsubst %.c,$(SAN)/%.o,$(EDITOR_SRC))
 $(SAN)/tests/apps/test_editor_document.o:
 $(SAN)/test_editor_document: $(SAN)/tests/apps/test_editor_document.o \
-        $(SAN_EDITOR_OBJS) $(SAN_OBJS) $(DESK_LIBS)
+        $(SAN_EDITOR_OBJS) $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_EDITOR_OBJS) $(SAN_OBJS) \
-	      $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
+	      $(OPTIONAL_LIBS) $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
 
 # The IDE suites link the IDE's sources the same way.
 SAN_IDE_OBJS := $(patsubst %.c,$(SAN)/%.o,$(IDE_SRC))
 $(SAN)/apps/ide/tiku_ide_app.o: override CFLAGS += -DTIKU_APP_EMBED
 $(SAN)/tests/apps/test_ide_workflow.o $(SAN)/tests/apps/test_ide_page.o:
 $(SAN)/test_ide_workflow $(SAN)/test_ide_page: $(SAN)/test_%: \
-        $(SAN)/tests/apps/test_%.o $(SAN_IDE_OBJS) $(SAN_OBJS) $(DESK_LIBS)
+        $(SAN)/tests/apps/test_%.o $(SAN_IDE_OBJS) $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_IDE_OBJS) $(SAN_OBJS) \
-	      $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
+	      $(OPTIONAL_LIBS) $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
 
-$(SAN)/apps/%.o: apps/%.c | prepare-build
+$(SAN)/apps/%.o: $(FOUNDATION_VIEW)/apps/%.c $(FOUNDATION_STAMP) | prepare-build
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(SANFLAGS) -Wno-unused-parameter $(KIT_INC) \
-	      -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $(SANFLAGS) -Wno-unused-parameter $(KIT_INC) $(APP_INC) \
+	      -MMD -MP -c -o $@ $(call kit_source,$<)
 
 # Each object notes the headers it read (-MMD), so changing one builds it
 # again: a struct grown in a header otherwise left objects laid out the
 # old way, and a suite crashed on them for no fault of the code.
-$(SAN)/kits/%.o: kits/%.c | prepare-build
+$(SAN)/kits/%.o: $(FOUNDATION_VIEW)/kits/%.c $(FOUNDATION_STAMP) | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(SANFLAGS) -Wno-unused-parameter $(KIT_INC) \
-	      -MMD -MP -c -o $@ $<
+	      -MMD -MP -c -o $@ $(call kit_source,$<)
 
-$(SAN)/tests/%.o: tests/%.c | prepare-build
+$(SAN)/tests/%.o: $(FOUNDATION_VIEW)/tests/%.c $(FOUNDATION_STAMP) | prepare-build
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(SANFLAGS) $(KIT_INC) $(TRK_INC) -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $(SANFLAGS) $(KIT_INC) $(APP_INC) $(TRK_INC) $(TEST_SOURCE_FLAGS) -MMD -MP -c -o $@ $(call kit_source,$<)
 
 $(SAN)/$(K)/support/tiku_saslprep.o: $(GEN_SASLPREP)
 
@@ -260,25 +280,25 @@ SAN_TRACKER_OBJS := $(patsubst %.c,$(SAN)/%.o,$(test_tracker_motion_SRCS))
 $(addprefix $(SAN)/,test_deskbar_dock test_deskbar_hover \
                     test_deskbar_motion): $(SAN)/test_%: \
         $(SAN)/tests/system/test_%.o $(SAN_DESKBAR_OBJS) $(SAN_OBJS) \
-        $(DESK_LIBS)
+        $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_DESKBAR_OBJS) $(SAN_OBJS) \
-	      $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
+	      $(OPTIONAL_LIBS) $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
 $(addprefix $(SAN)/,test_tracker_motion test_tracker_columns): $(SAN)/test_%: \
         $(SAN)/tests/system/test_%.o $(SAN_TRACKER_OBJS) $(SAN_OBJS) \
-        $(DESK_LIBS)
+        $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_TRACKER_OBJS) $(SAN_OBJS) \
-	      $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
+	      $(OPTIONAL_LIBS) $(DESK_LIBS) $(LDFLAGS) -lm $(X11_LIBS)
 
-$(SAN)/system/%.o: system/%.c mk/sanitize.mk | prepare-build
+$(SAN)/system/%.o: $(FOUNDATION_VIEW)/system/%.c mk/sanitize.mk | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(SANFLAGS) -ffunction-sections -fdata-sections \
-	      -Wno-unused-parameter $(KIT_INC) $(TRK_INC) \
-	      -MMD -MP -c -o $@ $<
+	      -Wno-unused-parameter $(KIT_INC) $(APP_INC) $(TRK_INC) $(TEST_SOURCE_FLAGS) \
+	      -MMD -MP -c -o $@ $(call kit_source,$<)
 
 # The instrumented readers come first, so the kits' own copies of them
 # are never taken from the archives.
 $(SAN)/test_cms_depth: $(SAN)/tests/kits/test_cms_depth.o \
-        $(filter-out $(SAN)/kits/support/tiku_cms.o,$(SAN_OBJS)) $(DESK_LIBS)
+        $(filter-out $(SAN)/kits/support/tiku_cms.o,$(SAN_OBJS)) $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
 # Source-including regressions supply the named implementation themselves.
@@ -296,7 +316,7 @@ test_ttf_reentrant_INCLUDED := kits/interface/tiku_ttf.c
 test_config_outbox_INCLUDED := kits/storage/tiku_config_outbox.c
 define audit49_sanitize_rule
 $(SAN)/$(1): $(SAN)/tests/kits/$(1).o \
-    $(filter-out $(patsubst %.c,$(SAN)/%.o,$($(1)_INCLUDED)),$(SAN_OBJS)) $(DESK_LIBS)
+    $(filter-out $(patsubst %.c,$(SAN)/%.o,$($(1)_INCLUDED)),$(SAN_OBJS)) $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$$(CC) $$(CFLAGS) $$(SANFLAGS) -o $$@ $$^ $$(LDFLAGS) -lm $$($(1)_LDLIBS)
 endef
 $(foreach t,$(SAN_AUDIT49_TESTS) test_config_outbox,$(eval $(call audit49_sanitize_rule,$(t))))
@@ -307,7 +327,7 @@ SAN_AUDIT49_SYSTEM_TESTS := test_addon_reap test_roster_self \
 define audit49_system_sanitize_rule
 $(SAN)/tests/system/$(1).o: CFLAGS += $$($(1)_CFLAGS)
 $(SAN)/$(1): $(SAN)/tests/system/$(1).o \
-    $(patsubst %.c,$(SAN)/%.o,$($(1)_SRCS)) $(SAN_OBJS) $(DESK_LIBS)
+    $(patsubst %.c,$(SAN)/%.o,$($(1)_SRCS)) $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$$(CC) $$(CFLAGS) $$(SANFLAGS) -o $$@ $$^ $$(LDFLAGS) -lm \
 	    $$(X11_LIBS) $$($(1)_LDLIBS)
 endef
@@ -315,26 +335,31 @@ $(foreach t,$(SAN_AUDIT49_SYSTEM_TESTS),$(eval $(call audit49_system_sanitize_ru
 
 SAN_POSE_AUDIT_OBJS := $(patsubst %.c,$(SAN)/%.o,$(test_pose_state_audit_SRCS))
 $(SAN)/test_pose_state_audit: $(SAN)/tests/system/test_pose_state_audit.o \
-        $(SAN_POSE_AUDIT_OBJS) $(SAN_OBJS) $(DESK_LIBS)
+        $(SAN_POSE_AUDIT_OBJS) $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
 SAN_AUDIT_TRACKER_OBJS := $(patsubst %.c,$(SAN)/%.o,$(test_tracker_audit_SRCS))
 $(SAN)/test_tracker_audit: $(SAN)/tests/system/test_tracker_audit.o \
-        $(SAN_AUDIT_TRACKER_OBJS) $(SAN_OBJS) $(DESK_LIBS)
+        $(SAN_AUDIT_TRACKER_OBJS) $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm $(X11_LIBS)
 $(SAN)/tests/system/test_about_memory.o $(SAN)/tests/system/test_board_mcu.o: \
         CFLAGS += -ffunction-sections -fdata-sections
 $(SAN)/test_about_memory: $(SAN)/system/shared/core/tiku_trk_task.o
 $(addprefix $(SAN)/,test_about_memory test_board_mcu): $(SAN)/test_%: \
-        $(SAN)/tests/system/test_%.o $(SAN_OBJS) $(DESK_LIBS)
+        $(SAN)/tests/system/test_%.o $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm $(X11_LIBS) $(GC_SECTIONS)
 $(SAN)/test_hex: $(SAN)/tests/apps/test_hex.o \
-        $(SAN)/apps/hex/tiku_hex_model.o $(SAN_OBJS) $(DESK_LIBS)
+        $(SAN)/apps/hex/tiku_hex_model.o $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
 	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm $(X11_LIBS)
 
-$(SAN)/test_%: $(SAN)/tests/kits/test_%.o $(SAN_OBJS) $(DESK_LIBS)
-	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_OBJS) $(DESK_LIBS) \
+$(SAN)/test_%: $(SAN)/tests/kits/test_%.o $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $< $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS) \
 	      $(LDFLAGS) -lm $(test_$*_LDLIBS)
+
+SAN_TESTS += $(DOCUMENT_TESTS)
+SAN_LEAK_TESTS += $(DOCUMENT_TESTS)
+SAN_TESTS += test_richfont
+SAN_LEAK_TESTS += test_richfont
 
 .PHONY: check-sanitize
 check-sanitize: $(addprefix $(SAN)/,$(SAN_TESTS))
@@ -347,4 +372,187 @@ check-sanitize: $(addprefix $(SAN)/,$(SAN_TESTS))
 	    echo "check-sanitize: $$t runs clean"; \
 	done
 
+SAN_DOCUMENT_OBJS := $(patsubst %.c,$(SAN)/%.o,$(DOCUMENT)) \
+    $(SAN)/kits/interface/tiku_text_input.o
+SAN_DOCUMENT_BINS := $(addprefix $(SAN)/,$(DOCUMENT_TESTS))
+$(SAN_DOCUMENT_BINS): $(SAN)/%: $(SAN)/tests/kits/%.o $(SAN_DOCUMENT_OBJS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ -pthread -lm
+
+.PHONY: test-document-sanitize
+test-document-sanitize: $(SAN_DOCUMENT_BINS)
+	@for suite in $(SAN_DOCUMENT_BINS); do \
+	    ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $$suite || exit 1; \
+	done
+
+SAN_RICHFONT_SRCS := $(filter %/tiku_richfont.c %/tiku_richfont_shape.c \
+    %/tiku_richfont_draw.c %/tiku_richfont_view.c,$(TRANSLATION) $(DOCUMENT_FORMATS) $(DECK_FORMATS)) \
+    $(filter %/tiku_ttf.c %/tiku_cff.c %/tiku_glyphpath.c \
+    %/tiku_gfx.c,$(INTERFACE))
+$(SAN)/test_richfont: $(SAN)/tests/kits/test_richfont.o \
+        $(SAN_DOCUMENT_OBJS) \
+        $(patsubst %.c,$(SAN)/%.o,$(SAN_RICHFONT_SRCS)) $(OPTIONAL_LIBS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm $(X11_LIBS) -pthread
+
+$(SAN)/test_richperformance: $(SAN)/tests/kits/test_richperformance.o \
+        $(SAN_DOCUMENT_OBJS) \
+        $(patsubst %.c,$(SAN)/%.o,$(SAN_RICHFONT_SRCS)) $(OPTIONAL_LIBS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm $(X11_LIBS) -pthread
+
+.PHONY: test-document-performance-sanitize
+test-document-performance-sanitize: $(SAN)/test_richperformance
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_richperformance
+
+.PHONY: test-document-render
+SAN_TESTS += test_richoutput
+SAN_LEAK_TESTS += test_richoutput
+SAN_TESTS += test_richmedia
+SAN_LEAK_TESTS += test_richmedia
+SAN_TESTS += test_richtables
+SAN_LEAK_TESTS += test_richtables
+SAN_TESTS += test_richcontinuation
+SAN_LEAK_TESTS += test_richcontinuation
+SAN_TESTS += test_richrowoutput
+SAN_LEAK_TESTS += test_richrowoutput
+$(SAN)/test_richrowoutput: $(SAN)/tests/kits/test_richrowoutput.o \
+        $(SAN_DOCUMENT_OBJS) \
+        $(patsubst %.c,$(SAN)/%.o,$(SAN_RICHFONT_SRCS) $(RICHIO_SRCS)) \
+        $(SAN)/kits/translation/tiku_richoutput_page.o \
+        $(SAN)/kits/translation/tiku_richoutput_pdf.o $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm $(X11_LIBS) -pthread
+$(SAN)/test_richcontinuation: $(SAN)/tests/kits/test_richcontinuation.o \
+        $(SAN_DOCUMENT_OBJS) \
+        $(patsubst %.c,$(SAN)/%.o,$(SAN_RICHFONT_SRCS) $(RICHIO_SRCS)) \
+        $(SAN)/kits/translation/tiku_richoutput_page.o \
+        $(SAN)/kits/translation/tiku_richoutput_pdf.o $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm $(X11_LIBS) -pthread
+$(SAN)/test_richtables: $(SAN)/tests/kits/test_richtables.o \
+        $(SAN_DOCUMENT_OBJS) \
+        $(patsubst %.c,$(SAN)/%.o,$(SAN_RICHFONT_SRCS) $(RICHIO_SRCS)) \
+        $(SAN)/kits/translation/tiku_richoutput_page.o \
+        $(SAN)/kits/translation/tiku_richoutput_pdf.o $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm $(X11_LIBS) -pthread
+
+.PHONY: test-document-tables
+test-document-tables: $(BUILD)/tests/test_richtables $(SAN)/test_richtables \
+        $(BUILD)/tests/test_richcontinuation $(SAN)/test_richcontinuation \
+        $(BUILD)/tests/test_richrowoutput $(SAN)/test_richrowoutput
+	$(BUILD)/tests/test_richtables
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_richtables
+	$(BUILD)/tests/test_richcontinuation
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_richcontinuation
+	$(BUILD)/tests/test_richrowoutput
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_richrowoutput
+$(SAN)/test_richmedia: $(SAN)/tests/kits/test_richmedia.o \
+        $(SAN_DOCUMENT_OBJS) \
+        $(patsubst %.c,$(SAN)/%.o,$(SAN_RICHFONT_SRCS) $(RICHIO_SRCS)) \
+        $(SAN)/kits/translation/tiku_richoutput_page.o \
+        $(SAN)/kits/translation/tiku_richoutput_pdf.o $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm $(X11_LIBS) -pthread
+
+.PHONY: test-document-media
+test-document-media: $(BUILD)/tests/test_richmedia $(SAN)/test_richmedia
+	$(BUILD)/tests/test_richmedia
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_richmedia
+
+$(SAN)/test_richoutput: $(SAN)/tests/kits/test_richoutput.o \
+        $(SAN_DOCUMENT_OBJS) \
+        $(patsubst %.c,$(SAN)/%.o,$(SAN_RICHFONT_SRCS) $(RICHIO_SRCS)) \
+        $(SAN)/kits/translation/tiku_richoutput_page.o \
+        $(SAN)/kits/translation/tiku_richoutput_pdf.o $(SAN_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm $(X11_LIBS) -pthread
+
+.PHONY: test-document-output
+test-document-output: $(BUILD)/tests/test_richoutput $(SAN)/test_richoutput
+	$(BUILD)/tests/test_richoutput
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_richoutput
+
+test-document-render: $(BUILD)/tests/test_richfont $(SAN)/test_richfont
+	$(BUILD)/tests/test_richfont
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_richfont
+
+SAN_TESTS += test_notes test_client_clipboard
+SAN_TESTS += test_write
+SAN_TESTS += test_atomic_guard
+SAN_LEAK_TESTS += test_atomic_guard
+SAN_LEAK_TESTS += test_write
+$(SAN)/test_write: $(SAN)/tests/apps/test_write.o $(SAN_DOCUMENT_OBJS) \
+        $(patsubst %.c,$(SAN)/%.o,$(test_write_SRCS) $(SAN_RICHFONT_SRCS)) \
+        $(patsubst %.c,$(SAN)/%.o,$(RICHIO_SRCS)) \
+        $(SAN)/kits/translation/tiku_richoutput_page.o \
+        $(SAN)/kits/translation/tiku_richoutput_pdf.o $(SAN_OBJS) \
+        $(SAN)/kits/storage/tiku_atomic_file.o $(OPTIONAL_LIBS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm $(X11_LIBS) -pthread
+
+.PHONY: test-document-write
+test-document-write: $(BUILD)/tests/test_write $(SAN)/test_write \
+        $(BUILD)/tests/test_atomic_guard $(SAN)/test_atomic_guard
+	$(BUILD)/tests/test_write
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_write
+	$(BUILD)/tests/test_atomic_guard
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_atomic_guard
+SAN_LEAK_TESTS += test_notes test_client_clipboard
+$(SAN)/test_notes: $(SAN)/tests/apps/test_notes.o $(SAN_DOCUMENT_OBJS) \
+        $(patsubst %.c,$(SAN)/%.o,$(test_notes_SRCS) $(SAN_RICHFONT_SRCS)) \
+        $(SAN)/kits/storage/tiku_atomic_file.o $(OPTIONAL_LIBS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm $(X11_LIBS) -pthread
+
+.PHONY: test-document-notes
+test-document-notes: $(BUILD)/tests/test_notes $(SAN)/test_notes \
+        $(BUILD)/tests/test_client_clipboard $(SAN)/test_client_clipboard
+	$(BUILD)/tests/test_notes
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_notes
+	$(BUILD)/tests/test_client_clipboard
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_client_clipboard
+
+SAN_TESTS += test_richio_native test_richio_faults test_richclip test_richcellclip test_zip_write
+SAN_LEAK_TESTS += test_richio_native test_richio_faults test_richclip test_richcellclip test_zip_write
+SAN_RICHIO_OBJS := $(patsubst %.c,$(SAN)/%.o,$(RICHIO_SRCS))
+SAN_TESTS += test_richhtml test_png_stream
+SAN_LEAK_TESTS += test_richhtml test_png_stream
+SAN_TESTS += test_richmarkup
+SAN_TESTS += test_richbookmarksio
+SAN_LEAK_TESTS += test_richmarkup
+SAN_LEAK_TESTS += test_richbookmarksio
+$(SAN)/test_richmarkup: $(SAN)/tests/kits/test_richmarkup.o \
+        $(SAN_DOCUMENT_OBJS) $(SAN_RICHIO_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm
+$(SAN)/test_richbookmarksio $(SAN)/test_png_stream $(SAN)/test_richhtml $(SAN)/test_richio_native $(SAN)/test_richclip $(SAN)/test_richcellclip $(SAN)/test_zip_write: $(SAN)/%: \
+        $(SAN)/tests/kits/%.o $(SAN_DOCUMENT_OBJS) $(SAN_RICHIO_OBJS) \
+        $(OPTIONAL_LIBS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm
+SAN_RICHIO_FAULT_OBJS := $(patsubst %.c,\
+    $(SAN)/tests/fixtures/richio/%.o,$(RICHIO_FAULT_SRCS))
+$(SAN)/tests/fixtures/richio/%.o: $(FOUNDATION_VIEW)/%.c $(FOUNDATION_VIEW)/tests/fixtures/richio_alloc.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(SANFLAGS) $(KIT_INC) $(APP_INC) \
+	      -include $(FOUNDATION_VIEW)/tests/fixtures/richio_alloc.h -MMD -MP -c -o $@ $(call kit_source,$<)
+$(SAN)/test_richio_faults: $(SAN)/tests/kits/test_richio_faults.o \
+        $(SAN_RICHIO_FAULT_OBJS) $(OPTIONAL_LIBS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm
+
+.PHONY: test-document-files-sanitize
+test-document-files-sanitize: $(SAN)/test_richbookmarksio $(SAN)/test_richmarkup $(addprefix $(SAN)/,\
+        test_richio_native test_richio_faults test_richclip test_richcellclip test_zip_write test_richhtml test_png_stream)
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_png_stream
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_richmarkup
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_richbookmarksio
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_richhtml
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_richio_native
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_richio_faults
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_richclip
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_richcellclip
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_zip_write
+
 -include $(shell find $(SAN) -name '*.d' -type f 2>/dev/null)
+
+SAN_TESTS += test_clipboard_typed
+SAN_LEAK_TESTS += test_clipboard_typed
+$(SAN)/test_clipboard_typed: $(SAN)/tests/kits/test_clipboard_typed.o \
+        $(SAN)/kits/application/tiku_clip_rpc.o $(SAN)/kits/support/tiku_msg.o \
+        $(OPTIONAL_LIBS) $(DESK_LIBS)
+	$(CC) $(CFLAGS) $(SANFLAGS) -o $@ $^ $(LDFLAGS) -lm
+.PHONY: test-clipboard-typed
+test-clipboard-typed: $(BUILD)/tests/test_clipboard_typed $(SAN)/test_clipboard_typed
+	$(BUILD)/tests/test_clipboard_typed
+	ASAN_OPTIONS=detect_leaks=$(SAN_LEAKS) $(SAN)/test_clipboard_typed

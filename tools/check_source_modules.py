@@ -8,6 +8,7 @@ Legacy families remain visible in the report without inheriting new style rules.
 from pathlib import Path
 import re
 import sys
+from source_layout import source_root
 
 ROOT = Path(__file__).resolve().parents[1]
 FAMILIES = {"ide": "tiku_ide_", "editor": "tiku_editor_",
@@ -30,12 +31,14 @@ def includes(text):
 
 
 def sources(root):
+    root = source_root(root)
     return sorted(p for tree in ("apps", "kits", "system")
                   for p in (root / tree).rglob("*")
                   if p.is_file() and p.suffix in SUFFIXES)
 
 
 def violations(root):
+    root = source_root(root)
     errors = []
     for family, prefix in FAMILIES.items():
         directory = root / "apps" / family
@@ -76,6 +79,7 @@ def violations(root):
 
 
 def report(root):
+    root = source_root(root)
     files = sources(root)
     fragments = sum(p.suffix == ".inl" for p in files)
     print(f"source inventory: {len(files)} C/header/Objective-C/fragments, "

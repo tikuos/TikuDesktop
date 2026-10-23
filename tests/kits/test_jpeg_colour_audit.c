@@ -1,5 +1,5 @@
 /* Explicit Adobe transforms determine JPEG component interpretation. */
-#include "../../kits/translation/tiku_jpeg.c"
+#include <tiku_jpeg.c>
 static int fails;
 static void pixel(int components, int transform, unsigned a, unsigned b,
                   unsigned c, unsigned k, uint32_t expected, const char *id)

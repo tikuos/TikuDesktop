@@ -11,6 +11,7 @@ import plistlib
 import shutil
 import subprocess
 import tempfile
+from source_layout import source_path
 
 ROOT = Path(__file__).resolve().parents[1]
 # The single-window TikuTracker is the harness's, under build/dev/: it
@@ -110,7 +111,7 @@ def package(root=ROOT, core=False):
                 if (source / helper).is_file():
                     shutil.copy2(source / helper, bundle / helper)
             for notice in NOTICES.get(app_id, ()):
-                shutil.copy2(root / NOTICE_SOURCES[notice], bundle / notice)
+                shutil.copy2(source_path(root, NOTICE_SOURCES[notice]), bundle / notice)
         resources(stage / 'assets', root)
         launchers(stage, root)
         (stage / '.tiku-package.json').write_text(
@@ -155,7 +156,7 @@ def validate(package_root, inventory, root=ROOT):
             raise RuntimeError('Unexpected file in application bundle: ' + app_id)
         for notice in NOTICES.get(app_id, ()):
             if (not (bundle / notice).is_file() or (bundle / notice).read_bytes()
-                    != (root / NOTICE_SOURCES[notice]).read_bytes()):
+                    != (source_path(root, NOTICE_SOURCES[notice])).read_bytes()):
                 raise RuntimeError('Missing licence notice in application bundle: ' + app_id)
     for name in RESOURCE_DIRS:
         source = root / 'assets' / name

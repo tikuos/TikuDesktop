@@ -1,0 +1,43 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/documents
+# Copy pixels, terminate the source application, then paste into a new one.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title picture.tkrd
+key a ctrl
+key c ctrl
+wait 25
+key w ctrl
+wait 25
+expect-no-title TikuWrite
+click 980 30
+wait 4
+menu-pick Documents
+wait 4
+menu-pick TikuWrite
+wait 100
+expect-title Untitled
+key v ctrl
+wait 30
+expect-title * Untitled
+expect-pixel 135 118 ff0000
+expect-pixel 135 128 0000ff
+expect-same-as-redraw
+shot /tmp/tiku-write-rich-paste.png
+key a ctrl
+key x ctrl
+wait 30
+expect-same-as-redraw
+shot /tmp/tiku-write-rich-cut.png
+expect-pixel 135 118 ffffff
+expect-pixel 135 128 ffffff
+key z ctrl
+wait 20
+expect-same-as-redraw
+shot /tmp/tiku-write-rich-undo.png
+expect-pixel 135 118 ff0000
+expect-pixel 135 128 0000ff

@@ -3,11 +3,7 @@
  *
  * Authors: Ambuj Varshney <ambuj@tiku-os.org>
  *
- * test_shm.c - a frame that is referenced rather than copied.
- *
- * Two peers on one machine share the surface; two joined by a line
- * cannot, and must fall back to sending the pixels.  Both are checked
- * here, because a fallback nobody exercises is a fallback that rots.
+ * test_shm.c - shared transfer snapshots and copied-frame fallback.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -86,7 +82,7 @@ main(void)
     int pair[2];
     const uint32_t *shown;
 
-    printf("a frame is referenced, not copied (DEV-007)\n");
+    printf("shared frame transfer and stable desktop snapshots (DEV-007)\n");
     (void)signal(SIGPIPE, SIG_IGN);
 
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, pair) != 0) {
@@ -100,6 +96,7 @@ main(void)
 
     id = tiku_remote_open(&client, "Shared", 8, 8);
     settle(&listener, 40);
+    while (tiku_remote_read(&client, NULL, NULL, NULL) > 0) { }
     check(s->win[0].opened, "the window is asked for over the socket");
     check((s->features & TIKU_FEAT_SHARED_SURFACE) != 0u,
           "and the peer says it can share a surface, being on this "
@@ -114,11 +111,11 @@ main(void)
     (void)tiku_remote_frame(&client, id, pixels, 8, 8);
     settle(&listener, 40);
     check(s->win[0].shared != NULL, "a surface arrives that both ends can see");
-    check(s->win[0].frame == NULL,
-          "and no copy of the pixels was ever sent -- that is the point");
+    check(s->win[0].frame != NULL,
+          "the desktop retains its own snapshot after shared transfer");
     shown = tiku_remote_pixels(&s->win[0]);
     check(shown != NULL && shown[0] == 0x00112233u,
-          "what the window draws is the application's own memory");
+          "the displayed snapshot contains the published pixels");
 
     pixels[0] = 0x00445566u;
     (void)tiku_remote_frame(&client, id, pixels, 8, 8);
@@ -262,6 +259,6 @@ main(void)
         printf("\nFAILURES\n");
         return 1;
     }
-    printf("\nthe pixels cross once, or not at all\n");
+    printf("\nshared and copied frame transfer hold\n");
     return 0;
 }

@@ -1,0 +1,26 @@
+{
+  "document_provider": "tiku-basic",
+  "overrides": [],
+  "excluded": [
+    "kits/translation/tiku_vector_raster.c",
+    "kits/translation/tiku_vector_raster.h"
+  ],
+  "presentation_provider": "none",
+  "office_shapes": null,
+  "applications": [
+    "calculator",
+    "developer-calculator",
+    "reader",
+    "image",
+    "pdf",
+    "archive",
+    "diff",
+    "grab",
+    "hex",
+    "terminal",
+    "circuit",
+    "marker",
+    "editor-common"
+  ],
+  "shell": "desktop"
+}

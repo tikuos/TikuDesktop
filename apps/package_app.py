@@ -5,9 +5,13 @@
 """Export application sources and install independently built bundles."""
 from pathlib import Path
 import argparse
+import hashlib
+import platform
+import re
 import json
 import shutil
 import sys
+import subprocess
 import tempfile
 
 MARKER = '.tiku-app.json'
@@ -52,6 +56,67 @@ def manifest_fields(path):
     return fields
 
 
+def validate_sdk(args):
+    """Check target, provider, identity and archive bytes before compilation."""
+    metadata = json.loads((args.sdk / 'sdk.json').read_text())
+    if metadata.get('system') != platform.system() or metadata.get('machine') != platform.machine():
+        raise RuntimeError('SDK target differs from the application build host')
+    if metadata.get('abi') != 5 or metadata.get('host') not in {'x11', 'cocoa'}:
+        raise RuntimeError('Unsupported application SDK ABI or host')
+    identity = metadata.get('sdk_identity', '')
+    if not re.fullmatch('[0-9a-f]{64}', identity) or identity != args.identity:
+        raise RuntimeError('SDK identity metadata is missing or inconsistent')
+    provider = metadata.get('document_provider')
+    if provider not in {'none', 'tiku-basic', 'kintsugi-advanced'} or (args.provider and provider != args.provider):
+        raise RuntimeError('SDK document provider differs from the requested provider')
+    kits = set(metadata.get('kit_names', '').split())
+    optional = kits & {'document', 'document_formats', 'deck', 'deck_formats', 'office_shapes'}
+    if provider == 'none' and optional or provider == 'tiku-basic' and optional - {'document', 'document_formats'}:
+        raise RuntimeError('SDK contains conflicting document providers')
+    if provider != 'none' and not {'document', 'document_formats'} <= kits:
+        raise RuntimeError('SDK document model and format archives must be paired')
+    archives = metadata.get('archive_sha256', {})
+    if not archives:
+        raise RuntimeError('SDK archive fingerprints are missing')
+    for name, expected in archives.items():
+        if Path(name).name != name or hashlib.sha256((args.sdk / 'lib' / name).read_bytes()).hexdigest() != expected:
+            raise RuntimeError('SDK archive differs from its metadata: ' + name)
+    headers = metadata.get('header_sha256', {})
+    if not headers:
+        raise RuntimeError('SDK header fingerprints are missing')
+    for name, expected in headers.items():
+        if Path(name).name != name or hashlib.sha256((args.sdk / 'include' / name).read_bytes()).hexdigest() != expected:
+            raise RuntimeError('SDK header differs from its metadata: ' + name)
+    actual_headers = {p.name for p in (args.sdk / 'include').glob('*.h')}
+    actual_archives = {p.name for p in (args.sdk / 'lib').glob('*.a')}
+    if actual_headers != set(headers) or actual_archives != set(archives):
+        raise RuntimeError('SDK contains unrecorded headers or archives')
+    if any('_private' in name for name in actual_headers):
+        raise RuntimeError('SDK contains a private header')
+    if ('tiku_richdoc.h' in actual_headers) != (provider != 'none'):
+        raise RuntimeError('SDK document headers and selected provider differ')
+    print(identity)
+
+
+def source_state(root):
+    """Record Git state when the foundation is the repository root."""
+    top = subprocess.run(['git', '-C', str(root), 'rev-parse', '--show-toplevel'], capture_output=True, text=True)
+    if top.returncode or Path(top.stdout.strip()).resolve() != root.resolve():
+        return dict(source_revision=None, source_dirty=None)
+    revision = subprocess.run(['git', '-C', str(root), 'rev-parse', '--verify', 'HEAD'], capture_output=True, text=True)
+    status = subprocess.run(['git', '-C', str(root), 'status', '--porcelain'], capture_output=True, text=True)
+    return dict(source_revision=revision.stdout.strip() or None, source_dirty=bool(status.stdout))
+
+
+def record(args):
+    """Write application provenance next to the linked module."""
+    metadata = json.loads(args.metadata.read_text())
+    if metadata.get('source_root'):
+        metadata.update(source_state(Path(metadata['source_root'])))
+    metadata['module_sha256'] = hashlib.sha256(args.module.read_bytes()).hexdigest()
+    write_changed(Path(str(args.module) + '.sdk.json'), (json.dumps(metadata, indent=2) + '\n').encode())
+
+
 def package(args):
     """Stage a module, manifest and the SDK's redistribution notices."""
     fields = manifest_fields(args.manifest)
@@ -64,6 +129,13 @@ def package(args):
         stage.mkdir()
         shutil.copy2(args.manifest, stage / 'app.manifest')
         shutil.copy2(args.module, stage / fields['module'])
+        provenance = Path(str(args.module) + '.sdk.json')
+        if not provenance.is_file():
+            raise RuntimeError('Application SDK provenance is missing; rebuild the module')
+        compiled = json.loads(provenance.read_text())
+        if compiled.get('sdk_identity') != sdk.get('sdk_identity') or compiled.get('module_sha256') != hashlib.sha256(args.module.read_bytes()).hexdigest():
+            raise RuntimeError('Application module differs from the packaging SDK; rebuild it')
+        shutil.copy2(provenance, stage / (fields['module'] + '.sdk.json'))
         helpers = {'basic': ('tiku-basic',), 'editor': ('tiku-edit',),
                    'terminal': ('tiku-term',)}
         for helper in helpers.get(fields['id'], ()):
@@ -72,6 +144,8 @@ def package(args):
         shutil.copytree(args.sdk / 'licenses', stage / 'licenses')
         metadata = dict(version=1, id=fields['id'], module=fields['module'],
                         sdk=sdk['product'], sdk_version=sdk['version'], abi=sdk['abi'],
+                        sdk_identity=sdk.get('sdk_identity'), foundation_revision=sdk.get('foundation_revision'),
+                        document_provider=sdk.get('document_provider'), host=sdk.get('host'),
                         system=sdk['system'], machine=sdk['machine'])
         (stage / MARKER).write_text(json.dumps(metadata, indent=2) + '\n')
         replace(stage, args.output, MARKER)
@@ -152,6 +226,13 @@ def main():
     """Dispatch configuration, source export, packaging and installation."""
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='action', required=True)
+    validation = commands.add_parser('validate-sdk')
+    validation.add_argument('--sdk', type=Path, required=True)
+    validation.add_argument('--identity', required=True)
+    validation.add_argument('--provider')
+    provenance = commands.add_parser('record')
+    provenance.add_argument('--metadata', type=Path, required=True)
+    provenance.add_argument('--module', type=Path, required=True)
     config = commands.add_parser('config')
     config.add_argument('path', type=Path)
     config.add_argument('flags', nargs=argparse.REMAINDER)
@@ -171,7 +252,11 @@ def main():
     for name in ('bundle', 'output'):
         installer.add_argument('--' + name, type=Path, required=True)
     args = parser.parse_args()
-    if args.action == 'config':
+    if args.action == 'validate-sdk':
+        validate_sdk(args)
+    elif args.action == 'record':
+        record(args)
+    elif args.action == 'config':
         prepare(args.path.parent.parent)
         write_changed(args.path, json.dumps(args.flags).encode())
     elif args.action == 'prepare':

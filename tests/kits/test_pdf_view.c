@@ -6,7 +6,7 @@
  * its jobs in flight.  SPDX-License-Identifier: Apache-2.0 */
 #include <assert.h>
 #include <unistd.h>
-#include "../../kits/translation/tiku_pdf_view.c"
+#include <tiku_pdf_view.c>
 #include "../fixtures/pdf_crypt.inc"
 
 #define PAGES 12

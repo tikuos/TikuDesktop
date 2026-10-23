@@ -1,0 +1,54 @@
+# shell: desktop
+# prefs: factory
+# mkdir: /tmp/trk_home
+# file: ~/headings.html <h1>Overview</h1><p>First paragraph.</p><h2>Measurements</h2><p>Second paragraph.</p><h3>Results</h3><p>Third paragraph.</p>
+# Import headings, navigate without editing, change a level, and save its meaning.
+wait 25
+click 980 30
+wait 4
+menu-pick Documents
+wait 4
+menu-pick TikuWrite
+wait 100
+key o ctrl
+wait 25
+expect-title Open
+click 400 200
+wait 4
+click 675 413
+wait 70
+expect-no-title Open
+expect-title * Untitled
+expect-same-as-redraw
+click 292 8
+wait 5
+expect-menu Heading outline
+menu-pick Heading outline
+wait 35
+expect-same-as-redraw
+shot /tmp/tiku-write-outline.png
+key Down
+key Return
+wait 15
+click 225 8
+wait 5
+expect-menu Heading 5
+menu-pick Heading 5
+wait 30
+expect-same-as-redraw
+key z ctrl
+wait 25
+expect-same-as-redraw
+click 292 8
+wait 5
+menu-pick Next heading
+wait 15
+expect-same-as-redraw
+key s ctrl
+wait 25
+expect-title Save
+key Return
+wait 80
+expect-title document.tkrd
+expect-same-as-redraw
+shot /tmp/tiku-write-outline-saved.png

@@ -1,0 +1,218 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/documents
+# A structured native table opens in the separate TikuWrite process.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title table.tkrd
+expect-same-as-redraw
+shot /tmp/tiku-write-table-desktop.png
+click 151 140
+key End
+key !
+wait 12
+expect-title * table.tkrd
+key Tab
+key x
+wait 12
+expect-same-as-redraw
+shot /tmp/tiku-write-table-edit.png
+key z ctrl
+wait 10
+key z ctrl
+wait 10
+expect-same-as-redraw
+click 334 8
+wait 5
+shot /tmp/tiku-write-grid-menu.png
+expect-title table.tkrd
+expect-menu Insert row above
+expect-menu Insert row below
+expect-menu Insert column left
+expect-menu Insert column right
+expect-menu Table size and padding
+expect-menu Table borders
+expect-menu Column width
+expect-menu Equal column widths
+expect-menu Cell shading
+expect-menu Clear cell shading
+menu-pick Insert row above
+wait 12
+click 334 8
+wait 5
+menu-pick Insert row below
+wait 12
+click 334 8
+wait 5
+menu-pick Insert column left
+wait 12
+click 334 8
+wait 5
+menu-pick Insert column right
+wait 12
+key N shift
+wait 12
+expect-same-as-redraw
+shot /tmp/tiku-write-grid-insert.png
+click 334 8
+wait 5
+menu-pick Delete column
+wait 12
+click 334 8
+wait 5
+menu-pick Delete row
+wait 12
+expect-same-as-redraw
+shot /tmp/tiku-write-grid-delete.png
+key z ctrl
+wait 8
+key z ctrl
+wait 8
+key z ctrl
+wait 8
+key z ctrl
+wait 8
+key z ctrl
+wait 8
+key z ctrl
+wait 8
+key z ctrl
+wait 8
+expect-same-as-redraw
+expect-title table.tkrd
+click 334 8
+wait 5
+menu-pick Column width
+wait 12
+key a ctrl
+key 6
+key 0
+key Return
+wait 12
+expect-title * table.tkrd
+expect-same-as-redraw
+shot /tmp/tiku-write-column-width.png
+click 334 8
+wait 5
+menu-pick Table size and padding
+wait 12
+key a ctrl
+key 2
+key 2
+key 0
+key Tab
+key a ctrl
+key 5
+wait 12
+expect-same-as-redraw
+shot /tmp/tiku-write-table-layout-panel.png
+key Return
+wait 12
+click 334 8
+wait 5
+menu-pick Table borders
+wait 12
+key a ctrl
+key 2
+wait 12
+expect-same-as-redraw
+shot /tmp/tiku-write-table-border-panel.png
+key Return
+wait 12
+expect-same-as-redraw
+click 334 8
+wait 5
+menu-pick Equal column widths
+wait 12
+expect-same-as-redraw
+key z ctrl
+wait 8
+key z ctrl
+wait 8
+key z ctrl
+wait 8
+key z ctrl
+wait 8
+expect-title table.tkrd
+expect-same-as-redraw
+click 151 140
+wait 8
+click 334 8
+wait 5
+menu-pick Cell shading
+wait 12
+key a ctrl
+key numbersign
+key d
+key d
+key e
+key e
+key f
+key f
+wait 12
+expect-same-as-redraw
+shot /tmp/tiku-write-cell-panel.png
+key Return
+wait 12
+expect-title * table.tkrd
+expect-pixel 132 132 ddeeff
+expect-same-as-redraw
+shot /tmp/tiku-write-cell-fill.png
+move 230 145
+wait 5
+press 230 145
+move 255 145
+wait 12
+expect-same-as-redraw
+shot /tmp/tiku-write-column-guide.png
+release 255 145
+wait 12
+expect-pixel 255 132 707070
+expect-pixel 240 132 ddeeff
+expect-same-as-redraw
+shot /tmp/tiku-write-column-drag.png
+press 255 145
+move 275 145
+wait 8
+key Escape
+release 275 145
+wait 12
+expect-pixel 255 132 707070
+expect-same-as-redraw
+key z ctrl
+wait 12
+expect-pixel 230 132 707070
+click 334 8
+wait 5
+menu-pick Clear cell shading
+wait 12
+expect-pixel 132 132 ffffff
+key z ctrl
+wait 12
+expect-pixel 132 132 ddeeff
+key z ctrl
+wait 12
+expect-title table.tkrd
+expect-same-as-redraw
+click 683 66
+wait 40
+expect-same-as-redraw
+shot /tmp/tiku-write-table-preview.png
+key Escape
+wait 10
+key = ctrl
+wait 10
+expect-same-as-redraw
+key 0 ctrl
+wait 10
+click 279 32
+wait 20
+expect-window-at 0 21
+expect-same-as-redraw
+shot /tmp/tiku-write-table-maximized.png
+key w ctrl
+wait 15
+expect-no-title TikuWrite

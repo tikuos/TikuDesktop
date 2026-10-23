@@ -141,6 +141,18 @@ static void model_test(bench_t *st)
     assert(!strcmp(arg_value(&c, "--console"), "usb"));
     st->port[0] = '\0';
     assert(!tiku_bench_command_build(st, &st->jobs[0], &c));
+    char p4_metadata[] = "B\tesp32p4\tesp32p4\tesp32\t115200\t0\t1";
+    tiku_bench_metadata_line(st, p4_metadata);
+    board_mcu = "ESP32-P4 rev 1.3";
+    tiku_bench_target_capture(st);
+    assert(st->supported && st->usb && !st->flash);
+    assert(!strcmp(st->profile, "esp32p4-usb"));
+    assert(tiku_bench_command_build(st, &st->jobs[0], &c));
+    assert(!strcmp(arg_value(&c, "--port"), "/dev/fixture-only"));
+    st->flash = 1;
+    assert(!tiku_bench_command_build(st, &st->jobs[0], &c));
+    st->flash = 0; st->port[0] = '\0';
+    assert(!tiku_bench_command_build(st, &st->jobs[0], &c));
     board_mcu = "nRF54L15";
     tiku_bench_target_capture(st);
     st->usb = st->flash = st->pk = st->epaper = 0;

@@ -1,0 +1,105 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/documents
+# Cell rectangles stay independent of text selection and document content.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title table.tkrd
+click 150 140
+click 334 8
+wait 5
+expect-menu Select row
+menu-pick Select row
+wait 15
+expect-title table.tkrd
+expect-pixel 132 132 bbd0e7
+expect-pixel 232 132 bbd0e7
+expect-pixel 132 196 ffffff
+expect-same-as-redraw
+shot /tmp/tiku-write-selected-row.png
+key Down shift
+wait 10
+expect-pixel 132 196 bbd0e7
+expect-pixel 232 196 bbd0e7
+expect-same-as-redraw
+key Left shift
+wait 10
+expect-pixel 132 196 bbd0e7
+expect-pixel 232 196 ffffff
+expect-same-as-redraw
+key Home ctrl shift
+wait 10
+expect-pixel 132 132 bbd0e7
+expect-pixel 232 132 ffffff
+expect-pixel 132 196 ffffff
+key Right shift
+wait 10
+expect-title table.tkrd
+expect-pixel 232 132 bbd0e7
+key c ctrl
+key b ctrl
+key x
+wait 12
+expect-title table.tkrd
+expect-same-as-redraw
+key Escape
+wait 12
+expect-pixel 132 132 ffffff
+press 150 140 1 alt
+move 300 185 1 alt
+release 300 185 1 alt
+wait 12
+expect-pixel 132 132 bbd0e7
+expect-pixel 232 196 bbd0e7
+expect-same-as-redraw
+shot /tmp/tiku-write-selected-cells.png
+click 334 8
+wait 5
+menu-pick Cell shading
+wait 12
+key a ctrl
+key numbersign
+key D
+key D
+key E
+key E
+key F
+key F
+key Return
+wait 15
+expect-title * table.tkrd
+key Escape
+wait 12
+expect-pixel 132 132 ddeeff
+expect-pixel 232 196 ddeeff
+expect-same-as-redraw
+key z ctrl
+wait 15
+expect-title table.tkrd
+click 334 8
+wait 5
+menu-pick Select table
+wait 12
+key Delete
+wait 15
+expect-title * table.tkrd
+expect-same-as-redraw
+key z ctrl
+wait 15
+expect-title table.tkrd
+expect-same-as-redraw
+click 334 8
+wait 5
+menu-pick Select column
+wait 12
+expect-pixel 132 132 bbd0e7
+expect-pixel 132 196 bbd0e7
+expect-pixel 232 196 ffffff
+expect-same-as-redraw
+key Escape
+key w ctrl
+wait 15
+expect-no-title TikuWrite

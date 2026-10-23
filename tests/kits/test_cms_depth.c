@@ -1,5 +1,5 @@
 /* The recursion guard rejects input before parsing signed data. */
-#include "../../kits/support/tiku_cms.c"
+#include <tiku_cms.c>
 #include <stdio.h>
 int main(void)
 {

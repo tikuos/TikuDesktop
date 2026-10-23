@@ -1,0 +1,40 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/documents
+# Nested rows continue through page preview without modifying the source.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title tall-rows.tkrd
+expect-same-as-redraw
+click 683 66
+wait 70
+expect-same-as-redraw
+shot /tmp/tiku-write-tall-row-page1.png
+key Right
+wait 15
+expect-same-as-redraw
+shot /tmp/tiku-write-tall-row-page2.png
+expect-pixel 250 250 ddeeff
+expect-pixel 250 305 ffeecc
+expect-pixel 420 310 eeddff
+expect-pixel 600 300 eeffee
+expect-pixel 195 300 707070
+key Right
+wait 15
+expect-same-as-redraw
+shot /tmp/tiku-write-tall-row-page3.png
+expect-pixel 360 350 ff0000
+expect-pixel 600 300 eeffee
+key Left
+wait 15
+expect-same-as-redraw
+key Escape
+wait 15
+expect-title tall-rows.tkrd
+expect-same-as-redraw
+key w ctrl
+wait 15
+expect-no-title TikuWrite

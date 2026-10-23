@@ -31,7 +31,11 @@ DEV    := $(BUILD)/dev
 # everything else builds.
 TIKUOS ?= $(abspath ..)
 
+FOUNDATION_VIEW := $(BUILD)/foundation
+FOUNDATION_STAMP := $(FOUNDATION_VIEW)/config.stamp
+
 include mk/toolchain.mk
+include mk/foundation.mk
 include mk/kits.mk
 include mk/system.mk
 include mk/apps.mk
@@ -123,7 +127,7 @@ test: all
 
 check-architecture: shells
 	@python3 tools/check_architecture.py
-	@python3 kits/tools/check_kits.py
+	@$(MAKE) --no-print-directory check-kits
 	@python3 tools/check_app_boundaries.py
 	@python3 tools/test_app_boundaries.py
 	@$(MAKE) --no-print-directory check-source-modules
@@ -143,18 +147,10 @@ check-shipping:
 check-tools:
 	@python3 tests/kits/test_audit_tools.py
 	@python3 tests/kits/test_glyphdump_path.py
+	@python3 tools/test_repository.py
 
-# The comment rules are the tikuOS checkout's (comment-style.md and
-# tools/check_comment_style.py), absent from a clone of this tree alone.
-# Checked when present; said out loud when not, because a check that
-# silently did not run reads as a pass.  This tree's
-# comments are written denser than the kernel's, so its ceilings are six
-# lines of prose and a twenty-line header rather than three and fifteen.
-# Size and documentation, the two rules the kernel's coding style is strict
-# about (docs/plans/PLAN-split.md): no function over 200 lines or ten locals, one
-# banner per file, every function documented once, every private-header
-# field commented, 80 columns.  Exemptions live in the checker with their
-# reasons.
+# Stomme supplies comment checks; product source modules also check function
+# size, declaration documentation and private-header fields.
 .PHONY: check-style
 check-style: check-source-modules
 	@python3 tools/check_style.py
@@ -169,17 +165,10 @@ source-report:
 	@python3 tools/check_style.py --report
 
 lint: check-source-modules
-	@if [ -x $(TIKUOS)/tools/check_comment_style.py ]; then \
-	    rc=0; \
-	    python3 $(TIKUOS)/tools/check_comment_style.py --root=$(CURDIR) \
-	        --prose=6 --header=20 || rc=1; \
-	    python3 $(TIKUOS)/tools/check_comment_style.py --root=$(CURDIR) \
-	        --prose=6 --header=20 --strict system kits apps || rc=1; \
-	    exit $$rc; \
-	else \
-	    echo "check_comment_style: SKIPPED -- no tikuOS checkout at $(TIKUOS)"; \
-	    echo "  comment style is UNCHECKED; see comment-style.md in tikuOS"; \
-	fi
+	@python3 "$(FOUNDATION_ROOT)/tools/check_comment_style.py" --root="$(CURDIR)" \
+	    --prose=6 --header=20
+	@python3 "$(FOUNDATION_ROOT)/tools/check_comment_style.py" --root="$(CURDIR)" \
+	    --prose=6 --header=20 --strict system kits apps hygiene
 	@python3 tools/check_style.py
 
 run: $(SYSTEM)/TikuDesktop system loadable resources launch-links

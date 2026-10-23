@@ -50,10 +50,42 @@ key l
 key k
 wait 6
 expect-title Milk
+note undo and redo use the shared document history
+wait 40
+key X shift
+key z ctrl
+wait 4
+expect-title Milk
+key y ctrl
+wait 4
+expect-title MilkX
+key z ctrl
+wait 4
+expect-title Milk
+note the Edit menu and clipboard are available in the embedded plain view
+key a ctrl
+key c ctrl
+key End ctrl
+key v ctrl
+wait 6
+expect-title MilkMilk
+shot /tmp/tiku-notes-rich-view.png
+note the real window zoom control resizes and restores the embedded view
+expect-window-at 750 156
+click 848 166
+wait 10
+expect-window-at 0 21
+expect-same-as-redraw
+shot /tmp/tiku-notes-maximized.png
+click 98 32
+wait 10
+expect-window-at 750 156
+expect-title MilkMilk
 note closing the window keeps the note: the file holds what was typed
 key w ctrl
 wait 60
 expect-file-has /tmp/trk_home/.local/share/notes/note-003.txt Milk
+expect-file-has /tmp/trk_home/.local/share/notes/note-003.txt MilkMilk
 note Quit is the one row that ends the application: every note's window
 note goes, and every note's file stays
 click-window List

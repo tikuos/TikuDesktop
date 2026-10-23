@@ -25,7 +25,7 @@ static int checked_close(FILE *f)
     return rc;
 }
 #define fclose checked_close
-#include "../../kits/storage/tiku_atomic_file.c"
+#include <tiku_atomic_file.c>
 #undef fclose
 
 static int produce(FILE *f, void *ctx)

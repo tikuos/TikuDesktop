@@ -1,0 +1,97 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/documents
+# Copy a multiline row, refuse incompatible targets, paste and undo as one edit.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title table.tkrd
+click 150 140
+click 334 8
+wait 5
+menu-pick Select row
+wait 10
+key c ctrl
+wait 25
+key w ctrl
+wait 25
+expect-no-title TikuWrite
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title table.tkrd
+click 150 140
+click 334 8
+wait 5
+menu-pick Select row
+wait 10
+key Down shift
+key v ctrl
+wait 15
+expect-title table.tkrd
+expect-pixel 132 196 bbd0e7
+expect-pixel 232 196 bbd0e7
+expect-same-as-redraw
+key Escape
+click 300 185
+click 334 8
+wait 5
+menu-pick Select cell
+wait 10
+key v ctrl
+wait 15
+expect-title table.tkrd
+expect-pixel 132 196 ffffff
+expect-pixel 232 196 bbd0e7
+expect-same-as-redraw
+key Escape
+click 150 185
+click 334 8
+wait 5
+menu-pick Select cell
+wait 10
+click 114 8
+wait 5
+expect-menu Paste
+menu-pick Paste
+wait 20
+expect-title * table.tkrd
+expect-pixel 132 200 bbd0e7
+expect-pixel 232 200 bbd0e7
+expect-same-as-redraw
+shot /tmp/tiku-write-cell-paste.png
+key s ctrl
+wait 80
+expect-title table.tkrd
+key z ctrl
+wait 15
+expect-title * table.tkrd
+expect-pixel 132 196 ffffff
+expect-same-as-redraw
+key z ctrl shift
+wait 15
+expect-title table.tkrd
+expect-same-as-redraw
+key Escape
+click 150 140
+click 334 8
+wait 5
+menu-pick Select row
+wait 10
+click 114 8
+wait 5
+expect-menu Cut
+menu-pick Cut
+wait 30
+expect-title * table.tkrd
+expect-same-as-redraw
+key z ctrl
+wait 15
+expect-title table.tkrd
+expect-same-as-redraw
+key w ctrl
+wait 15
+expect-no-title TikuWrite

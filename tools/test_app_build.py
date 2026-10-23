@@ -73,12 +73,15 @@ class BuildTests(unittest.TestCase):
             shutil.copy2(ROOT / name, self.root / name)
         for name in ('mk', 'system', 'kits', 'tools', 'assets', 'tests'):
             (self.root / name).symlink_to(ROOT / name, target_is_directory=True)
-        output = command(['make', '-n', 'core'], self.root)
+        for name in ('foundation.lock.json', 'foundation.product.json'):
+            shutil.copy2(ROOT / name, self.root / name)
+        foundation = json.loads((ROOT / 'build/foundation/identity.json').read_text())['source_root']
+        output = command(['make', '-n', 'core', 'FOUNDATION_ROOT=' + foundation], self.root)
         self.assertNotIn(' -c apps/', output)
 
     def test_sdk_without_optional_kits(self):
         """An SDK exports the declared kit profile without optional archives."""
-        names = [name for name in export_sdk.ORDER if name not in ('document', 'deck')]
+        names = [name for name in export_sdk.ORDER if name not in export_sdk.OPTIONAL]
         libraries = []
         for name in names:
             directory = self.root / 'kits' / name

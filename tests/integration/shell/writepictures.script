@@ -1,0 +1,32 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/documents
+# Embedded pictures open through Tracker into the separate document editor.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title picture.tkrd
+expect-same-as-redraw
+shot /tmp/tiku-write-picture-desktop.png
+click 140 118
+wait 6
+expect-same-as-redraw
+press 170 133
+move 210 153
+wait 6
+expect-same-as-redraw
+release 210 153
+wait 15
+expect-title * picture.tkrd
+expect-pixel 140 145 0000ff
+expect-same-as-redraw
+shot /tmp/tiku-write-picture-resized.png
+key z ctrl
+wait 15
+expect-pixel 140 145 ffffff
+expect-same-as-redraw
+key w ctrl
+wait 15
+expect-no-title TikuWrite

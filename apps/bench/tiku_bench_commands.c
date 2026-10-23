@@ -147,7 +147,7 @@ int tiku_bench_action(bench_t *st, int command)
         }
     } else if (command == CLEAR_LOG) st->nlog = st->log_head = 0;
     else if (command == FLASH || command == MONITOR)
-        st->flash = command == FLASH;
+        st->flash = command == FLASH && strcmp(st->mcu, "esp32p4");
     else if (command == PK) st->pk = !st->pk;
     else if (command == EPAPER) st->epaper = !st->epaper;
     else if (command == LARGE || command == USB) {

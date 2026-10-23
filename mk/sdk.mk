@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Export position-independent kit archives and the public application headers.
 SDK_DIR ?= $(BUILD)/sdk
-SDK_LIBRARIES := $(PIC_LIBS) $(PICLIB)/libtiku_editor.a
+SDK_LIBRARIES := $(PIC_LIBS) $(OPTIONAL_PIC_LIBS) $(PICLIB)/libtiku_editor.a
 
 .PHONY: sdk install-sdk app-build app-package app-source check-app-build
 sdk: $(SDK_LIBRARIES)
-	@python3 tools/export_sdk.py --output "$(SDK_DIR)" \
+	@python3 tools/export_sdk.py --output "$(SDK_DIR)" --source "$(FOUNDATION_VIEW)" \
 	    --cflags '$(CFLAGS)' --ldflags '$(LDFLAGS) $(X11_LIBS) -lm -pthread' \
 	    --host "$(TIKU_HOST)" --libraries $(SDK_LIBRARIES)
 

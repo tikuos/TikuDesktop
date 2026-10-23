@@ -1,5 +1,5 @@
 /* Key-reader limits, wrong passwords and partially decoded key storage. */
-#include "../../kits/support/tiku_keyfile.c"
+#include <tiku_keyfile.c>
 #include <assert.h>
 
 /* A PFX around MacData @p mac: version 3, an authSafe of one empty

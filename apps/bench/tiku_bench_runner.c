@@ -28,12 +28,13 @@ int tiku_bench_command_build(bench_t *st, const job_t *job, command_t *c)
         if (*job->only) { argument(c, "--only"); argument(c, job->only); }
         return 1;
     }
+    if (!strcmp(st->mcu, "esp32p4") && st->flash) return 0;
     const char *base[] = {"python3", "-u", "-m", "tikubench", "run",
         st->suites[job->suite].key, "--board", st->mcu,
         st->flash ? "--flash" : "--skip-build"};
     for (size_t i = 0; i < sizeof base / sizeof base[0]; i++) argument(c, base[i]);
     if (st->usb) { argument(c, "--console"); argument(c, "usb"); }
-    if (st->usb && !strcmp(st->mcu, "esp32c5")) {
+    if (st->usb && (!strcmp(st->mcu, "esp32c5") || !strcmp(st->mcu, "esp32p4"))) {
         if (!*st->port) return 0;
         argument(c, "--port"); argument(c, st->port);
     }

@@ -22,6 +22,7 @@ Authors: Ambuj Varshney <ambuj@tiku-os.org>
 import os
 import re
 import sys
+from source_layout import source_root
 
 LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
 SKIP = re.compile(r'^(-+|/|\\x|%[.\-0-9]*[sdxufg]|[A-Z0-9_]{2,}$|'
@@ -58,7 +59,7 @@ def scan(path):
 
 def main():
     show = '--list' in sys.argv
-    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'system')
+    root = source_root(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / 'system'
     per_file = {}
     total = 0
     for base, _dirs, files in os.walk(root):

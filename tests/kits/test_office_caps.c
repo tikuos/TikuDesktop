@@ -1,5 +1,5 @@
 /* Latin Extended-A uppercase pairs change parity within the block. */
-#include "../../kits/translation/tiku_office_flow.c"
+#include <tiku_office_flow.c>
 int main(void)
 {
     const unsigned lower[] = {0x13a, 0x142, 0x144, 0x17a, 0x17c, 0x17e};

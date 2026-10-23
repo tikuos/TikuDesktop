@@ -1,7 +1,7 @@
 /* Real filesystem + deterministic device/IO failures. No board required.
  * SPDX-License-Identifier: Apache-2.0 */
 #define TIKU_CONFIG_OUTBOX_TEST_HOOKS
-#include "../../kits/storage/tiku_config_outbox.c"
+#include <tiku_config_outbox.c>
 #include <assert.h>
 #include <sys/wait.h>
 

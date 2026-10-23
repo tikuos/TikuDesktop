@@ -1,0 +1,86 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/documents
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title bookmarks.tkrd
+click 292 8
+wait 5
+menu-pick Next hyperlink
+wait 25
+expect-same-as-redraw
+click 292 8
+wait 5
+expect-menu Follow document link
+menu-pick Follow document link
+wait 25
+expect-same-as-redraw
+expect-title bookmarks.tkrd
+key Home ctrl
+click 292 8
+wait 5
+expect-menu Bookmarks
+menu-pick Bookmarks
+wait 5
+expect-menu Finish
+expect-menu Add or move bookmark...
+menu-pick Add or move bookmark...
+wait 20
+key S
+key t
+key a
+key r
+key t
+key Return
+wait 25
+expect-title * bookmarks.tkrd
+expect-same-as-redraw
+click 292 8
+wait 5
+menu-pick Bookmarks
+wait 5
+expect-menu Start
+menu-pick Remove bookmark...
+wait 15
+key a ctrl
+key S
+key t
+key a
+key r
+key t
+key Return
+wait 25
+key z ctrl
+wait 25
+click 292 8
+wait 5
+menu-pick Bookmarks
+wait 5
+expect-menu Start
+menu-pick Start
+wait 25
+expect-same-as-redraw
+key s ctrl
+wait 100
+expect-title bookmarks.tkrd
+key w ctrl
+wait 20
+expect-no-title TikuWrite
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title bookmarks.tkrd
+click 292 8
+wait 5
+menu-pick Bookmarks
+wait 5
+expect-menu Start
+expect-menu Finish
+menu-pick Finish
+wait 25
+expect-same-as-redraw
+shot /tmp/tiku-write-bookmarks.png

@@ -5,7 +5,7 @@
 static int rc2_wiped, rc4_wiped;
 static void audit_wipe(void *ptr, size_t n);
 #define cms_wipe audit_wipe
-#include "../../kits/support/tiku_cms.c"
+#include <tiku_cms.c>
 #undef cms_wipe
 static void audit_wipe(void *ptr, size_t n)
 {

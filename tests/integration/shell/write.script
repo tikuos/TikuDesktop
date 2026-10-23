@@ -1,0 +1,91 @@
+# shell: desktop
+# prefs: factory
+# TikuWrite runs in its own application process, with a shared Rich View.
+wait 25
+click 980 30
+wait 4
+menu-pick Documents
+wait 4
+expect-menu TikuWrite
+menu-pick TikuWrite
+wait 100
+expect-title Untitled
+key H shift
+key e
+key l
+key l
+key o
+wait 8
+expect-title * Untitled
+key a ctrl
+key b ctrl
+key c ctrl
+key End ctrl
+key Return
+key v ctrl
+wait 10
+key z ctrl
+wait 5
+key y ctrl
+wait 5
+expect-same-as-redraw
+shot /tmp/tiku-write-window.png
+expect-window-at 85 21
+click 277 32
+wait 20
+expect-window-at 0 21
+expect-same-as-redraw
+shot /tmp/tiku-write-maximized.png
+click 192 32
+wait 20
+expect-window-at 85 21
+key f ctrl
+wait 10
+expect-same-as-redraw
+shot /tmp/tiku-write-find.png
+key Escape
+wait 5
+key = ctrl
+wait 12
+expect-same-as-redraw
+key 0 ctrl
+wait 12
+write /tmp/trk_home/.config/TrackerSettings GlobalMenuBar on
+wait 20
+click 114 8
+wait 8
+expect-menu Paste as plain text
+menu-pick Paste as plain text
+wait 12
+key z ctrl
+wait 8
+expect-same-as-redraw
+click 162 8
+wait 8
+expect-menu Paragraph styles
+menu-pick Paragraph styles
+wait 8
+expect-menu Apply paragraph style
+menu-pick Apply paragraph style
+wait 12
+expect-same-as-redraw
+key Escape
+wait 8
+click 292 8
+wait 8
+expect-menu Page preview
+menu-pick Page preview
+wait 50
+expect-same-as-redraw
+shot /tmp/tiku-write-preview.png
+key Escape
+wait 15
+expect-same-as-redraw
+key w ctrl
+wait 8
+expect-title * Untitled
+expect-same-as-redraw
+shot /tmp/tiku-write-close.png
+key Escape
+wait 5
+expect-title * Untitled

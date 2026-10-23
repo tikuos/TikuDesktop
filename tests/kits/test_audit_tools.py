@@ -5,6 +5,9 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+from source_layout import source_path
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("style", ROOT / "tools/check_style.py")
@@ -28,7 +31,7 @@ class AuditTools(unittest.TestCase):
             "apps/ide/tiku_ide_events.c": ["tiku_ide_event"],
         }
         for path, names in targets.items():
-            functions = style.functions((ROOT / path).read_text().splitlines())
+            functions = style.functions(source_path(ROOT, path).read_text().splitlines())
             for name in names:
                 with self.subTest(path=path, function=name):
                     found = [f for f in functions if f[0] == name]
@@ -38,9 +41,9 @@ class AuditTools(unittest.TestCase):
                     self.assertLessEqual(count, style.LOCALS_MAX)
 
     def test_desktop_internal_contracts(self):
-        header = (ROOT / "system/desktop/tiku_trk_desktop_private.h").read_text()
+        header = source_path(ROOT, "system/desktop/tiku_trk_desktop_private.h").read_text()
         self.assertNotIn("int mount_one(", header)
-        draw = (ROOT / "system/desktop/tiku_trk_desktop_draw.c").read_text()
+        draw = source_path(ROOT, "system/desktop/tiku_trk_desktop_draw.c").read_text()
         self.assertNotIn("20 /* TITLE_HEIGHT */", draw)
         self.assertIn("TIKU_TRK_TITLE_HEIGHT", draw)
 
@@ -65,7 +68,8 @@ class AuditTools(unittest.TestCase):
             script = root / "tools/icons/gen_icons.py"
             output = root / "kits/translation/tiku_icons.c"
             shutil.copyfile(ROOT / "tools/icons/gen_icons.py", script)
-            shutil.copyfile(ROOT / "kits/translation/tiku_icons.c", output)
+            shutil.copyfile(ROOT / "tools/source_layout.py", root / "tools/source_layout.py")
+            shutil.copyfile(source_path(ROOT, "kits/translation/tiku_icons.c"), output)
             original = output.read_text()
             subprocess.run(["python3", str(script)], check=True, capture_output=True)
             result = output.read_text()

@@ -14,21 +14,22 @@ def violations(root, shell_sources):
         if source.startswith(("apps/", "examples/")) or "/apps/" in source:
             errors.append(f"application source linked into a shell: {source}")
     for tree in ("system", "kits", "apps", "examples"):
-        for path in (root / tree).rglob("*"):
+        scan_root = root / "build/foundation" if (root / "build/foundation" / tree).is_dir() else root
+        for path in (scan_root / tree).rglob("*"):
             if path.suffix not in (".c", ".h", ".inl"):
                 continue
             source = path.read_text(encoding="utf-8")
-            relative = path.relative_to(root).as_posix()
+            relative = path.relative_to(scan_root).as_posix()
             host = relative.startswith(("system/runner/", "system/supervisor/"))
             shell = tree == "system" and not host
             for included in re.findall(r'^\s*#\s*include\s*[<"]([^">]+)', source, re.M):
                 if (tree in ("apps", "examples") or host) and ("tiku_trk_" in included or "system/" in included):
-                    errors.append(f"app imports desktop-private API: {path.relative_to(root)}: {included}")
-                app_include = included.startswith("apps/") or (path.parent / included).resolve().is_relative_to((root / "apps").resolve())
+                    errors.append(f"app imports desktop-private API: {path.relative_to(scan_root)}: {included}")
+                app_include = included.startswith("apps/") or (path.parent / included).resolve().is_relative_to((scan_root / "apps").resolve())
                 if tree != "apps" and app_include:
-                    errors.append(f"system imports application source: {path.relative_to(root)}: {included}")
+                    errors.append(f"system imports application source: {path.relative_to(scan_root)}: {included}")
             if shell and re.search(r'\btiku_app_load\s*\(', source):
-                errors.append(f"desktop may not load application modules: {path.relative_to(root)}")
+                errors.append(f"desktop may not load application modules: {path.relative_to(scan_root)}")
     return errors
 
 

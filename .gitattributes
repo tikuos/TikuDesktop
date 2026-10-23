@@ -1,0 +1,2 @@
+# Preserve the exact upstream Unicode conformance vectors, including comments.
+tests/fixtures/document/unicode17/*BreakTest.txt whitespace=-blank-at-eol

@@ -4,6 +4,8 @@
 #include <limits.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include "tiku_manifest.h"
+#include "tiku_trk_associations.h"
 #include "../../system/shared/ui/commands/tiku_trk_launch_controller.c"
 
 static int opens;
@@ -42,6 +44,10 @@ int main(int argc, char **argv)
         "/apps/reader/TikuReader.so", "text/html,text/markdown");
     int marker = tiku_trk_launch_add_document(&apps, "TikuMarker", "/tiku-run",
         "/apps/marker/TikuMarker.so", "text/markdown");
+    tiku_manifest_t manifest;
+    assert(!tiku_manifest_read("apps/write/write.app", &manifest, NULL, 0));
+    int writer = tiku_trk_launch_add_document(&apps, manifest.name, "/tiku-run",
+        "/apps/write/TikuWrite.so", manifest.types);
     tiku_store_t *store = tiku_store_memory_open();
     tiku_backend_t *backend = tiku_backend_posix_open();
     assert(store && backend);
@@ -53,14 +59,16 @@ int main(int argc, char **argv)
     const char *names[] = {"main.bas", "MAIN.BAS", "project.tiku",
                            "project.TIKU", "notes.txt", "NOTES.TXT",
                            "readme.md", "README.MD", "guide.markdown",
-                           "GUIDE.MARKDOWN", "index.html", "INDEX.HTM"};
-    for (int i = 0; i < 12; i++) {
+                           "GUIDE.MARKDOWN", "index.html", "INDEX.HTM",
+                           "report.tkrd", "REPORT.TKRD"};
+    for (int i = 0; i < 14; i++) {
         snprintf(path, sizeof path, "%s/%s", dir, names[i]);
         FILE *f = fopen(path, "w"); assert(f && !fclose(f));
         tiku_model_t model;
         assert(!backend->ops->stat(backend, path, &model));
         const tiku_trk_app_t *app = tiku_trk_launch_controller_handler(&controller, &model);
-        int want = i < 4 ? basic : i < 6 ? editor : i < 10 ? marker : reader;
+        int want = i < 4 ? basic : i < 6 ? editor :
+            i < 10 ? marker : i < 12 ? reader : writer;
         assert(app == &apps.app[want]);
         if (i >= 6 && i < 10) assert(!strcmp(model.type, "text/markdown"));
         const char *paths[] = {path, "/tmp/another literal;name.bas"};
@@ -69,7 +77,17 @@ int main(int argc, char **argv)
         assert(tiku_trk_launch_run(app, paths, 2) == TIKU_TRK_LAUNCH_NOTHING);
         assert(!unlink(path));
     }
-    assert(opens == 24);
+    assert(opens == 28);
+    tiku_trk_associations_t associations;
+    int found = 0;
+    tiku_trk_associations_load(&associations, &apps, NULL, store);
+    for (int i = 0; i < associations.count; i++)
+        if (!strcmp(associations.row[i].type, "application/x-tiku-richdoc")) {
+            assert(!strcmp(associations.row[i].label,
+                           "TikuWrite document (.tkrd)"));
+            found = 1;
+        }
+    assert(found);
     tiku_model_t model = {0};
     snprintf(model.type, sizeof model.type, "text/markdown");
     tiku_trk_launch_set_preferred(store, model.type, "TikuReader");

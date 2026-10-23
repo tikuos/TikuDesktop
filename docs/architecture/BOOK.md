@@ -569,9 +569,25 @@ The message types are `HELLO`, `WELCOME`, `OPEN`, `CONFIGURE`, `FRAME`,
 machine), `DRAW` (a display list), `MENUS`, `PLACE`, `RAISE`,
 `SIZEABLE`, `EVENT`, `PICK`, `CLOSE`, `CLOSED`, `SHELL_IN`,
 `SHELL_OUT`, `BASIC_IN`, `BASIC_OUT` (a board's console carried on the
-session), `TELL`, `SAY`, `DESCRIBE`, `READY`, and `SHUTDOWN`. A board's
+session), `TELL`, `SAY`, `DESCRIBE`, `READY`, `RELEASE`, and `SHUTDOWN`. A board's
 window session uses the same protocol over a channel, so a board window
 and an application window are the same kind of object to the desktop.
+
+With `TIKU_FEAT_FRAME_SNAPSHOT` negotiated on a Unix-domain socket, each
+shared `READY` publication names a buffer and a unique 64-bit token. The
+desktop copies that buffer into its window-owned frame before sending
+`RELEASE`. The application cannot reuse the buffer until that exact token
+returns. If both transfer buffers are busy, it sends a copied `FRAME`
+message. Painting does not read messages or wait for a release. Network
+sockets, serial links and older desktops use copied frames.
+
+The compositor reads only the window-owned snapshot, so application
+repaints cannot change its pixels during a desktop redraw. The snapshot
+requires `4 * width * height` bytes per pixel window, in addition to any
+two-buffer shared transfer mapping. Resize publications keep their own
+tokens, and delayed releases cannot free buffers in a later mapping.
+Older clients' eight-byte `READY` messages are accepted and copied, but
+they do not provide the acknowledged ownership guarantee during the copy.
 
 **The client — `tiku_client.h`.** `tiku_client_run(&descriptor)`
 connects to the desktop, calls `start`, and pumps events until the

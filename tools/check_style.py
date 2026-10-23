@@ -33,8 +33,9 @@ Authors: Ambuj Varshney <ambuj@tiku-os.org>
 import os
 import re
 import sys
+from source_layout import source_root
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = str(source_root(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 TREES = ['system/desktop', 'system/tracker', 'system/shared', 'system/deskbar']
 REPORT_TREES = TREES + ['apps', 'kits']
 

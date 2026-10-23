@@ -15,9 +15,10 @@
 
 import re
 import sys
+from source_layout import source_root
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = source_root(Path(__file__).resolve().parent.parent)
 
 MENUS = ROOT / "system/shared/ui/tiku_trk_cwmenu.c"
 ENABLE = ROOT / "system/shared/ui/tiku_trk_shortcuts.c"

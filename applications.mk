@@ -26,32 +26,32 @@ APPL_SRCS   += applications/board/gui/tiku_measure_board.c
 # the behaviour has nothing that draws, and the paint draws through the
 # board's recording surface (board/gui/tiku_gfx.h and friends, found
 # first on the include path).
-APPL_SRCS   += applications/kits/interface/tiku_field.c
-APPL_SRCS   += applications/kits/interface/tiku_field_event.c
-APPL_SRCS   += applications/kits/interface/tiku_text_input.c
-APPL_SRCS   += applications/kits/interface/tiku_sensor.c
-APPL_SRCS   += applications/kits/interface/tiku_sensor_paint.c
-APPL_SRCS   += applications/kits/interface/tiku_dialog.c
-APPL_SRCS   += applications/kits/interface/tiku_choice.c
-APPL_SRCS   += applications/kits/interface/tiku_choice_paint.c
-APPL_SRCS   += applications/kits/interface/tiku_text_layout.c
-APPL_SRCS   += applications/kits/interface/tiku_text_layout_paint.c
-APPL_SRCS   += applications/kits/interface/tiku_properties.c
-APPL_SRCS   += applications/kits/interface/tiku_properties_paint.c
-APPL_SRCS   += applications/kits/interface/tiku_preferences_layout.c
-APPL_SRCS   += applications/kits/interface/tiku_scroll.c
-APPL_SRCS   += applications/kits/interface/tiku_slider.c
-APPL_SRCS   += applications/kits/interface/tiku_tabs.c
-APPL_SRCS   += applications/kits/interface/tiku_list.c
-APPL_SRCS   += applications/kits/interface/tiku_layout.c
-APPL_SRCS   += applications/kits/interface/tiku_form_row.c
-APPL_SRCS   += applications/kits/interface/tiku_colors.c
-APPL_SRCS   += applications/kits/interface/tiku_slider_paint.c
-APPL_SRCS   += applications/kits/interface/tiku_tabs_paint.c
-APPL_SRCS   += applications/kits/interface/tiku_list_paint.c
-APPL_SRCS   += applications/kits/interface/tiku_colors_paint.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_field.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_field_event.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_text_input.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_sensor.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_sensor_paint.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_dialog.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_choice.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_choice_paint.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_text_layout.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_text_layout_paint.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_properties.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_properties_paint.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_preferences_layout.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_scroll.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_slider.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_tabs.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_list.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_layout.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_form_row.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_colors.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_slider_paint.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_tabs_paint.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_list_paint.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_colors_paint.c
 APPL_CFLAGS += -DTIKU_APPL_GUI=1 -DTIKU_DISPLAYLESS=1 \
-               -Iapplications/board/gui -Iapplications/kits/interface
+               -Iapplications/board/gui -Iapplications/foundation/kits/interface
 ifeq ($(TIKU_APPL_GUI_DEMO),1)
 APPL_SRCS   += applications/board/samples/panel_demo.c
 APPL_CFLAGS += -DTIKU_APPL_GUI_DEMO=1
@@ -65,8 +65,8 @@ endif
 # kilobytes of .bss, which an image that shows no page should not carry.
 # The caps are the board's: the desktop's would be eighty.
 ifeq ($(TIKU_APPL_DOC),1)
-APPL_SRCS   += applications/kits/interface/tiku_doc.c
-APPL_SRCS   += applications/kits/interface/tiku_doc_paint.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_doc.c
+APPL_SRCS   += applications/foundation/kits/interface/tiku_doc_paint.c
 APPL_CFLAGS += -DTIKU_APPL_DOC=1 -DTIKU_DOC_TEXT_MAX=2048 \
                -DTIKU_DOC_BLOCKS_MAX=64 -DTIKU_DOC_LINES_MAX=192 \
                -DTIKU_DOC_PIECES_MAX=384 -DTIKU_DOC_LINKS_MAX=32 \

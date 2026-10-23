@@ -1,0 +1,31 @@
+# shell: desktop
+# prefs: factory
+# Export a modified document through File, retaining the unsaved native state.
+wait 25
+click 980 30
+wait 4
+menu-pick Documents
+wait 4
+menu-pick TikuWrite
+wait 100
+key H shift
+key e
+key l
+key l
+key o
+wait 10
+expect-title * Untitled
+click 75 8
+wait 8
+expect-menu Export HTML...
+menu-pick Export HTML...
+wait 20
+expect-same-as-redraw
+shot /tmp/tiku-write-html-picker.png
+key Return
+wait 70
+expect-title * Untitled
+expect-file-has /tmp/trk_home/document.html <!doctype html>
+expect-file-has /tmp/trk_home/document.html Hello
+expect-same-as-redraw
+shot /tmp/tiku-write-html-export.png

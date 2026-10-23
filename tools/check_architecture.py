@@ -2,7 +2,7 @@
 """
 Reject new dependency leaks in Tracker itself.
 
-The KITS have their own guard -- applications/kits/tools/check_kits.py --
+The KITS have their own guard -- foundation tools/check_dependencies.py --
 which holds the table of what each kit may draw on.  This one is about
 the application above them: that no kit ever learns Tracker's name, and
 that the modules which must stay drawable-nowhere keep away from the
@@ -16,15 +16,16 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TRACKER_SRC = ROOT / "system"
-KITS = ROOT / "kits"
+SOURCE_ROOT = ROOT / "build/foundation" if (ROOT / "build/foundation/system").is_dir() else ROOT
+TRACKER_SRC = SOURCE_ROOT / "system"
+KITS = SOURCE_ROOT / "kits"
 
 X11_LEGACY = set()
 
 # Tracker's own modules that must draw nothing.  The list is shorter than
 # it was because the ones that had no business drawing in the FIRST place
 # -- nodes, attributes, queries, volumes, decoders -- are kits now, and a
-# kit that reached the Interface kit is refused by check_kits.py before
+# kit that reached the Interface kit is refused by check_dependencies.py before
 # this ever runs.
 HEADLESS = {
     "alert", "clip", "drag", "frame", "info", "launch", "match",
@@ -34,7 +35,7 @@ HEADLESS = {
 
 # Interaction state that moved INTO the Interface kit keeps the same
 # draws-nothing rule it had here: it lives beside the painters now, so
-# check_kits.py cannot see an include that never crosses a kit boundary
+# check_dependencies.py cannot see an include that never crosses a kit boundary
 # -- this is the guard that survives the move.
 KIT_HEADLESS = ("tiku_scroll.c", "tiku_field.c", "tiku_scroll.h",
                 "tiku_field.h")
@@ -82,7 +83,7 @@ TRACKER_ONLY = {
     "system/shared/ui/tiku_trk_navigator.c",
 } | {
     # the browser shell, one composition over the files in its directory
-    str(p.relative_to(ROOT)) for p in (ROOT / "system/tracker").glob("*.c")
+    str(p.relative_to(SOURCE_ROOT)) for p in (SOURCE_ROOT / "system/tracker").glob("*.c")
 }
 
 
@@ -115,7 +116,7 @@ def ownership() -> list[str]:
     named = sets["TRACKER"] | sets["DESKTOP"] | sets["ENGINE"] | sets["HOSTS"]
     makefile = (ROOT / "mk/tests.mk").read_text()
     for path in sorted(TRACKER_SRC.rglob("*.c")):
-        rel = str(path.relative_to(ROOT))
+        rel = str(path.relative_to(SOURCE_ROOT))
         if rel not in named and rel not in makefile:
             errors.append(f"{rel}: no binary, engine, or test names it")
     return errors
@@ -174,7 +175,7 @@ def main() -> int:
     # The platform rule, over every tree that is compiled for a host.
     # system/ is the application host and the supervisor: they start
     # processes, which is exactly where somebody reaches for an #ifdef.
-    for tree in (TRACKER_SRC, KITS, ROOT / "apps", ROOT / "board",
+    for tree in (TRACKER_SRC, KITS, SOURCE_ROOT / "apps", ROOT / "board",
                  ROOT / "examples"):
         if not tree.is_dir():
             continue

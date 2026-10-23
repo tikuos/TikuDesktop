@@ -1,0 +1,50 @@
+# shell: desktop
+# prefs: factory
+# mkdir: /tmp/trk_home
+# file: ~/import.md # Imported document
+# Import a markup copy, edit it, and export without claiming the source file.
+wait 25
+click 980 30
+wait 4
+menu-pick Documents
+wait 4
+menu-pick TikuWrite
+wait 100
+key o ctrl
+wait 25
+expect-title Open
+click 400 200
+wait 4
+click 675 413
+wait 70
+expect-no-title Open
+expect-title * Untitled
+expect-same-as-redraw
+shot /tmp/tiku-write-markdown-import.png
+key End ctrl
+key Return
+key E shift
+key d
+key i
+key t
+wait 10
+click 75 8
+wait 6
+expect-menu Export Markdown...
+menu-pick Export Markdown...
+wait 20
+expect-same-as-redraw
+key Return
+wait 70
+expect-title * Untitled
+expect-file-has /tmp/trk_home/document.md Imported document
+expect-file-has /tmp/trk_home/document.md Edit
+expect-file-has /tmp/trk_home/import.md Imported document
+expect-same-as-redraw
+shot /tmp/tiku-write-markdown-export.png
+key s ctrl
+wait 20
+expect-title Save
+key Escape
+wait 10
+expect-title * Untitled

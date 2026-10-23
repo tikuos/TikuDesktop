@@ -58,7 +58,7 @@ else
 X11_CFLAGS :=
 X11_LDFLAGS := -framework Cocoa -framework QuartzCore
 endif
-CFLAGS  += -D_DARWIN_C_SOURCE -include kits/support/tiku_darwin.h $(X11_CFLAGS)
+CFLAGS  += -D_DARWIN_C_SOURCE -include $(BUILD)/foundation/kits/support/tiku_darwin.h $(X11_CFLAGS)
 LDFLAGS += $(X11_LDFLAGS)
 # What GNU ld spells --gc-sections.
 GC_SECTIONS := -Wl,-dead_strip
@@ -70,67 +70,73 @@ RT_LIBS :=
 # the media and storage kits, and dropped again by the linker from any
 # binary that calls nothing in them -- which is how the probe, whose
 # whole point is to need nothing, stays needing nothing.
-LDFLAGS += -framework AudioToolbox -framework DiskArbitration \
+LDFLAGS += -framework Cocoa -framework PDFKit -framework AudioToolbox -framework DiskArbitration \
            -framework CoreFoundation -Wl,-dead_strip_dylibs
 else
 GC_SECTIONS := -Wl,--gc-sections
 RT_LIBS := -lrt
 endif
 
+ifeq ($(UNAME_S),Linux)
+CFLAGS += $(shell pkg-config --cflags gio-2.0 gio-unix-2.0)
+LDFLAGS += $(shell pkg-config --libs gio-2.0 gio-unix-2.0)
+endif
+
 KIT_INC := -Ikits/support -Ikits/device -Ikits/storage -Ikits/interface \
            -Ikits/translation -Ikits/application -Ikits/media -Ikits/editor \
+           -Ikits/document \
            -I$(BUILD)/generated
 TRK_INC := -Isystem/shared/core -Isystem/shared/ui -Isystem/shared/ui/commands \
            -Isystem/shared/ui/windows -Isystem/shared/ui/overlays -Isystem/shared/ui/input \
            -Isystem/deskbar -Isystem/shared/shell -Isystem/shared/shell/adapters \
            -Isystem/shared/shell/session
 
-$(OBJ)/kits/%.o: kits/%.c | prepare-build
+$(OBJ)/kits/%.o: $(FOUNDATION_VIEW)/kits/%.c $(FOUNDATION_STAMP) | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -MMD -MP -c -o $@ $<
 
 # The one kit file written to AppKit, in its language; retained and
 # released by hand, so the host's C struct may hold what it opened.
-$(OBJ)/kits/%.o: kits/%.m | prepare-build
+$(OBJ)/kits/%.o: $(FOUNDATION_VIEW)/kits/%.m $(FOUNDATION_STAMP) | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -MMD -MP -c -o $@ $<
 
 # The same kit sources again, position-independent: a shared object
 # cannot link an archive of fixed-address code, and applications are
 # loadable.
-$(PIC)/kits/%.o: kits/%.c | prepare-build
+$(PIC)/kits/%.o: $(FOUNDATION_VIEW)/kits/%.c $(FOUNDATION_STAMP) | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -fPIC -MMD -MP -c -o $@ $<
-$(PIC)/kits/%.o: kits/%.m | prepare-build
+$(PIC)/kits/%.o: $(FOUNDATION_VIEW)/kits/%.m $(FOUNDATION_STAMP) | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -fPIC -MMD -MP -c -o $@ $<
 
 # A test may carry flags of its own (test_inflate reads a corpus from
 # tests/); they are looked up by the file's own name.
-$(OBJ)/tests/%.o: tests/%.c | prepare-build
+$(OBJ)/tests/%.o: $(FOUNDATION_VIEW)/tests/%.c $(FOUNDATION_STAMP) | prepare-build
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(KIT_INC) $(TRK_INC) $($(notdir $*)_CFLAGS) \
+	$(CC) $(CFLAGS) $(KIT_INC) $(APP_INC) $(TRK_INC) $(TEST_SOURCE_FLAGS) $($(notdir $*)_CFLAGS) \
 	      -MMD -MP -c -o $@ $<
 
-$(OBJ)/apps/%.o: apps/%.c | prepare-build
+$(OBJ)/apps/%.o: $(FOUNDATION_VIEW)/apps/%.c $(FOUNDATION_STAMP) | prepare-build
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) -Wno-unused-parameter $(KIT_INC) $(APP_INC) -MMD -MP -c -o $@ $<
 
 # Process hosts compile against the public SDK only.
 HOST_OBJECTS := $(OBJ)/system/runner/tiku_run.o \
                 $(OBJ)/system/supervisor/tiku_desk.o
-$(HOST_OBJECTS): $(OBJ)/%.o: %.c | prepare-build
+$(HOST_OBJECTS): $(OBJ)/%.o: $(FOUNDATION_VIEW)/%.c $(FOUNDATION_STAMP) | prepare-build
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(KIT_INC) -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $(KIT_INC) -I$(FOUNDATION_VIEW)/system/product -MMD -MP -c -o $@ $<
 
-$(OBJ)/system/%.o: system/%.c | prepare-build
+$(OBJ)/system/%.o: $(FOUNDATION_VIEW)/system/%.c $(FOUNDATION_STAMP) | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(KIT_INC) $(TRK_INC) -MMD -MP -c -o $@ $<
 
-$(OBJ)/examples/%.o: examples/%.c | prepare-build
+$(OBJ)/examples/%.o: examples/%.c $(FOUNDATION_STAMP) | prepare-build
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(KIT_INC) -MMD -MP -c -o $@ $<
+	$(CC) $(CFLAGS) $(KIT_INC) $(APP_INC) -MMD -MP -c -o $@ $<
 
-$(OBJ)/tools/%.o: tools/%.c | prepare-build
+$(OBJ)/tools/%.o: tools/%.c $(FOUNDATION_STAMP) | prepare-build
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(KIT_INC) -MMD -MP -c -o $@ $<

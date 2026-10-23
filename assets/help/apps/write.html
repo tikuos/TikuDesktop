@@ -1,0 +1,379 @@
+<h1>TikuWrite</h1>
+
+<p>TikuWrite edits formatted documents. Open it from <b>Documents</b> in the
+Deskbar menu, or open a <code>.tkrd</code> file in Tracker. It runs in a separate
+application process. A normal launch starts with an empty document.</p>
+
+<h2 id="files">Open and save</h2>
+
+<p><b>File / Open</b> accepts native <code>.tkrd</code> documents and UTF-8
+<code>.txt</code>, HTML and Markdown files. Imported content is a new copy:
+saving it requires a native filename. TikuWrite does not overwrite the
+original file. The status bar reports conversion differences.</p>
+
+<p><b>Save</b> and <b>Save As</b> preserve text, formatting, named styles,
+lists, links, pictures, tables, cell colours, paragraph properties, paper size
+and margins. Use the
+<code>.tkrd</code> extension. An asterisk in the title means there are unsaved
+changes. You can continue typing during a save; edits made after saving starts
+remain marked as unsaved.</p>
+
+<p>Saving checks whether the destination has changed outside TikuWrite. On a
+conflict, choose <b>Save As</b> to keep another copy, or <b>Cancel</b> to keep
+editing. Closing a modified document asks whether to save, discard or cancel.
+A save error leaves the document open.</p>
+
+<p><b>Export plain text</b> writes UTF-8 without formatting or list markers.
+Pictures are replaced by their alternate text in an <code>[Image: ...]</code>
+label.
+<b>Export PDF</b> writes pages with embedded fonts and selectable text. Export
+does not replace the native document or mark unsaved edits as saved.</p>
+
+<p><b>File / Export HTML</b> creates a <code>.html</code> copy for a web
+browser. It includes text formatting, links, numbered and bulleted lists,
+nested tables, column widths and cell colours. Pictures are embedded in the
+HTML file, including transparency, display size and alternate text; there is
+no separate image folder to copy. Named styles become CSS formatting, not
+editable style definitions.
+The browser controls fonts, line wrapping and pagination, so the result can
+look different from page preview. The status bar reports these differences.
+Keep the <code>.tkrd</code> file for further editing. Embedded pictures can make the export large. If it exceeds the
+size limit, export fails without replacing the destination file; pictures
+are not silently omitted.</p>
+
+<p><b>File / Export Markdown</b> writes a <code>.md</code> copy with headings,
+lists, bold, italic and links. Table content becomes paragraphs and pictures
+use alternate text. Formatting and page layout without Markdown equivalents
+are reported in the status bar. Export does not mark the native document saved.</p>
+
+<p>HTML import reads document text, supported inline formatting, lists and
+rectangular nested tables. It does not execute scripts or load external
+resources. Embedded base64 PNG pictures retain their pixels, alternate text,
+links and supported display sizes, including pictures in TikuWrite's own HTML
+exports. External pictures and unsupported image variants become alternate-text
+labels with a warning. Malformed embedded PNGs and pictures over the memory
+limit refuse the import. Unsupported CSS and page
+layout are reported. Merged cells and irregular table grids are refused.
+Markdown import supports documentation-style headings, emphasis, links,
+lists, fenced code and pipe tables. It is a subset, not a full CommonMark
+implementation. Keep the source markup when its exact syntax matters.</p>
+
+<h2 id="editing">Edit and format</h2>
+
+<p>Drag to select text. Double-click selects a word segment; triple-click
+selects a displayed line. The usual copy, cut, paste, undo and redo commands
+are in <b>Edit</b>. Copy and Paste between TikuWrite windows preserve
+formatting and pictures. Other applications receive plain text.</p>
+
+<p>Undo history shares unchanged paragraphs and picture pixels with the current
+document. Its memory limit applies to the extra storage needed to undo and
+redo, not a fresh copy of the whole document for every edit. Older complete
+undo steps are removed when necessary. An edit that cannot fit as one undoable
+step is refused without losing existing content or history.</p>
+
+<p>The toolbar provides bold, italic and underline. <b>Format</b> also offers
+strike-through, text colour, yellow highlighting, superscript, subscript and
+links. Font families are <code>sans-serif</code>, <code>serif</code> and
+<code>monospace</code>, using installed fonts. Sizes are 6 to 144 points.
+Enter colours as <code>#RRGGBB</code>. Enter an empty link to remove it.</p>
+
+<p>With no text selected, character formatting applies to the next text you
+type. With a selection, it changes that text. The paragraph menu offers
+alignment, indents, spacing, list levels, numbering restart and keep rules.
+Title and Body are direct-formatting presets. Heading 1 through Heading 6
+set both paragraph appearance and its semantic heading level. Body clears
+that level; Title does not add a heading to the outline.</p>
+<h2>Navigate by heading</h2>
+<p>Choose <b>View / Heading outline</b> to open the sidebar. Click a heading
+to move to it, or use the arrow keys, Home/End and Page Up/Page Down, then
+Return. Escape returns focus to the editor. Scroll the heading list with the
+mouse wheel. <b>Previous heading</b> and <b>Next heading</b> also work with
+the sidebar closed. Navigation does not change the document.</p>
+<p>Heading levels survive native files, rich copy/paste, HTML and Markdown.
+A style name alone does not make a heading; use Paragraph / Heading 1–6
+to add a level to older documents.</p>
+
+<h2>Navigate hyperlinks</h2>
+<p>Choose <b>View / Next hyperlink</b> or <b>Previous hyperlink</b> to select
+linked text and read its target in the status bar. This includes links in table
+cells and works in read-only documents. Navigation does not edit the document
+or open a browser. At the last or first link it stops without wrapping.</p>
+<p>Changing the selection or editing cancels an unfinished scan. Link text
+with several styles is selected as one passage. Multi-codepoint characters
+remain selected as whole characters, even if a link applies to part of one.</p>
+
+<h2>Bookmarks and document links</h2>
+<p>Place the caret where you want to return, then choose <b>View / Bookmarks /
+Add or move bookmark</b>. Enter a name and choose Save. An existing name moves
+that bookmark here. A bookmark marks the caret, not the selected range.</p>
+<p>Choose a name from the Bookmarks submenu to go there. The submenu shows
+the first seven names; <b>Go to bookmark</b> accepts any saved name. Names are
+case-sensitive and can contain up to 63 UTF-8 bytes. Up to 1,024 bookmarks can
+be saved in a document. <b>Remove bookmark</b> removes the name, not its text.
+Adding, moving and removing bookmarks can be undone.</p>
+<p>Bookmarks follow text edits and are saved in native documents and recovery
+drafts. If a bookmarked cell is deleted, the point moves to surviving text;
+Undo restores it to the cell. Reopen an add/remove panel if you edit the
+document while that panel is open.</p>
+<p>To link to a bookmark called Results, select the link label, choose
+<b>Format / Link</b>, and enter <code>#Results</code>. Encode a space as
+<code>%20</code>, for example <code>#Test%20results</code>. Select the linked
+text, or find it with Next/Previous hyperlink, then choose <b>View / Follow
+document link</b>. This does not open external websites. Missing targets are
+reported in the status bar without moving the selection.</p>
+<p>Rich copy/paste keeps links but does not copy bookmark definitions. HTML
+and Markdown export omit the definitions and report the loss. Exported PDFs
+do not provide named bookmark destinations. Use native files to keep them.</p>
+
+<h2 id="ruler">Paragraph ruler</h2>
+
+<p>Choose <b>View / Paragraph ruler</b> to show indentation markers. The top
+marker moves the first line. The lower-left marker moves the other lines and
+carries the first line with them. The lower-right marker moves the right text
+edge. Numbers are points (72 per inch), measured from the current text area's
+left edge. The ruler describes the editing view, not printed page margins.</p>
+
+<p>Drag to preview a change; release to apply it. One Undo restores the whole
+change. Escape cancels a drag. Hold Option/Alt for fractional-point movement.
+With the ruler focused, Up/Down chooses a marker, Left/Right moves it one point,
+and Shift moves it ten points. Home/End moves to the permitted limit. Return or
+Escape returns to editing. The status bar identifies the selected marker.</p>
+
+<p>A hollow marker means the selected paragraphs have different positions.
+Dragging that marker sets its position for the selection while preserving
+other indentation values. Lists and table-cell padding are included. Select
+text within one body or cell, not a rectangle or a range across different
+cells. The ruler accepts up to 1,024 paragraphs. Read-only documents show
+measurements but do not permit changes.</p>
+
+<h2 id="pictures">Pictures</h2>
+
+<p>Choose <b>Format / Insert picture</b> and select a PNG, JPEG or BMP file.
+Pictures are embedded in the document, not linked to the original file.
+Changing the original file later does not change your document. Insert at a
+caret or replace a selection within one paragraph. Moving the caret or editing
+while the file loads cancels insertion.</p>
+
+<p>Click a picture to select it. Drag its bottom-right grip to resize it while
+keeping its aspect ratio; one Undo reverses the resize. <b>Format / Picture
+width</b> sets an exact width in points. <b>Picture alternate text</b> adds a
+short description. Pictures support undo, save/reopen, page preview and PDF
+export, including transparency.</p>
+
+<p>The limit is 4,194,304 decoded pixels per picture, subject to document and
+file-size limits. Large pictures make native files larger than the original
+JPEG or PNG. Reduce a picture's size if it cannot fit on a printed page.
+Copy and Paste between TikuWrite windows preserve formatting and pictures,
+even after the source window closes. Native applications that accept HTML can
+receive formatting and embedded pictures. Text-only applications receive
+<code>[Picture]</code> in place of each picture. Cut removes the selection
+only after the desktop confirms receipt. A changed selection or unanswered
+request leaves the source intact. Older desktops without rich clipboard
+support refuse picture Copy/Cut. Delete removes a selected picture and can
+be undone.</p>
+
+<h2 id="tables">Tables</h2>
+
+<p>Place the caret in a paragraph and choose <b>Table / Insert table</b>.
+Enter rows and columns, for example <code>2 x 3</code>. The table appears
+after the whole paragraph, with the caret in its first cell. Columns start at
+equal widths and rows grow with their content.</p>
+
+<p>Type and format text inside a cell as usual. Enter adds another paragraph;
+Tab moves to the next cell and Shift+Tab moves back. You can insert a nested
+table inside a cell. <b>Table / Delete table</b> removes the table containing
+the caret, including its contents. Undo restores it.</p>
+
+<p>Native saves preserve tables. Preview and PDF keep a table together when
+it fits on one page; longer tables continue between rows. A tall row can
+continue across pages too. Each cell breaks between complete text lines,
+including inside nested tables. Cell borders, padding and shading repeat on
+continuations; a short cell can be empty beside a continuing neighbour.
+Pictures are not sliced. A single line or repeated header that cannot fit,
+or a table that is too wide, still needs smaller content or larger paper.
+Tall-row continuations use dedicated pages, so the final one can have spare
+space. Page breaks inside cells are not supported. Zoom out if a wide table
+extends beyond the editing view.</p>
+
+<p>To repeat column labels on each page, place the caret in the table and
+choose <b>Table / Repeat header rows</b>. Enter 1 to repeat the first row,
+2 to repeat the first two rows, or 0 to turn this off. The count cannot exceed
+the number of rows in the table. Headers stay with a body row rather than
+appearing alone at the bottom of a page. Inserting within the headers adds
+another header; inserting immediately after them adds a body row. Deleting a
+header reduces the count. These changes support Undo and save/reopen.</p>
+
+<p>The Table menu also inserts a row above or below the caret, inserts a column
+to its left or right, and deletes the current row or column. Deletion removes
+the cells' contents too; Undo restores them. The last row or column is kept:
+use Delete table to remove the whole table. In a nested table, these commands
+affect the inner table containing the caret.</p>
+
+<p>To select cells, hold Alt (Option on macOS) and drag from one cell to another.
+You can also use <b>Table / Select cell</b>, <b>Select row</b>,
+<b>Select column</b> or <b>Select table</b>. Shift-click extends the selected
+rectangle. Press Escape, or click normally, to return to text editing.</p>
+
+<p>With cells selected, hold Shift and press an arrow key to extend or shrink
+the rectangle by one cell. Shift+Home or Shift+End selects to the first or
+last column in the current row. Ctrl+Shift+Home or Ctrl+Shift+End selects to
+the first or last cell in the table (use Command on macOS). The starting
+cell stays fixed, including when you reverse direction.</p>
+
+<p>For a long table, keep the mouse button held and move the pointer above or
+below the document area. The document scrolls while the pointer stays there,
+allowing you to select rows outside the current view. Release the button to
+stop. The selection stays in the table where the drag began.</p>
+
+<p>With cells selected, Cell shading and Clear cell shading apply to the whole
+rectangle. <b>Clear cell contents</b>, Delete or Backspace removes text and
+inline pictures but keeps paragraph breaks, cell formatting and nested table
+grids. Undo restores the contents. Clear up to 1,024 nonempty paragraphs at
+once; larger selections are refused without partial changes.</p>
+
+<p>Copy preserves formatting, links, pictures and shading when pasted into
+selected cells in TikuWrite, including nested tables. Native applications that
+accept HTML can receive the formatted selection and embedded pictures.
+Text-only applications receive quoted tab-separated text with [Picture]
+placeholders.
+Cut waits for clipboard confirmation, then clears the contents but keeps the
+cells. Typing and text formatting are not supported while cells are selected.
+Press Escape first to edit the text of an individual cell.</p>
+
+<h2>Copy and paste with other applications</h2>
+<p>Copy offers plain text, Tiku rich data and HTML together on supported desktop
+hosts. TikuWrite uses its native format when available and HTML for external
+formatted selections. Linux uses the X11 clipboard; macOS uses its pasteboard.
+The total transfer limit is 16 MiB, including pictures and all representations.
+A large copy may take a moment. Cut removes text only after the desktop confirms
+that the clipboard owns the selection.</p>
+<p>HTML paste supports formatted paragraphs, links, lists, embedded PNG pictures
+and a standalone table, including nested tables. Scripts are omitted and remote
+pictures are not downloaded. Conversion differences appear in the status bar.
+Mixed selections with ordinary text outside a table, multiple top-level tables,
+and flat HTML pasted into a cell rectangle are refused without changing the
+document. RTF and non-UTF-8 HTML are not supported. Empty imported text leaves
+the current selection alone.</p>
+<p>To discard source formatting, choose <b>Edit / Paste as plain text</b>,
+or press Ctrl+Shift+V (Command+Shift+V on macOS). This explicitly uses the
+plain-text fallback even when the rich content is unsupported. Pictures become
+text placeholders if supplied by the source. In selected cells, the command
+reads tab-separated text. If the source offers only HTML and no plain text,
+it leaves the destination unchanged.</p>
+
+<p><b>Paste into cells:</b> select one starting cell and choose Edit / Paste
+or press Ctrl+V (Command+V on macOS). Tab-separated text fills cells down and
+right without growing the table. If several cells are selected, the
+clipboard's rows and columns must match the selection exactly. Quoted fields
+can contain paragraph breaks and tabs; a row copied from TikuWrite keeps
+these when pasted into another row.</p>
+
+<p>Rich cell paste replaces contents and shading but keeps the grid and column
+widths. Plain-text paste keeps the target shading and first paragraph's
+defaults; it does not import character formatting.
+Cells containing nested tables cannot be replaced this way. Invalid quoting,
+unequal row widths, insufficient space and operations above the editor's
+limits leave the table unchanged. Try a smaller block if a paste is too
+large. Undo restores the complete previous contents in one step.</p>
+<p>To create a new table from copied cells, place the text caret outside a
+table and paste. Text before the caret stays above the table; text after it
+stays below, with formatting retained. Clear any text selection first.
+The new grid fits the available width and is selected after insertion.
+Undo removes it in one step. Inserting a nested table this way is not supported.
+A changed selection, damaged rich
+payload or clipboard timeout leaves the document unchanged. Older desktops
+support text-only cell Copy/Paste and do not offer rectangular Cut.</p>
+
+<p>To change appearance, place the caret in a cell and use the Table menu:</p>
+<ul>
+<li><b>Table size and padding</b>: width in points (0 fits the available
+space), and the padding inside each cell.</li>
+<li><b>Column width</b>: this column's percentage of the table width.
+Other columns keep their proportions. Choose <b>Equal column widths</b>
+to give every column the same share.</li>
+<li><b>Table borders</b>: line thickness in points (0 hides borders), and
+colour as <code>#RRGGBB</code> or <code>#AARRGGBB</code>.</li>
+<li><b>Cell shading</b>: the background colour of selected cells, or the cell containing the
+caret. Use the same colour format, or enter <code>none</code>. Choose
+<b>Clear cell shading</b> to remove it. Shading also works with hidden borders.</li>
+</ul>
+<p>These changes support Undo and are preserved in native saves, preview and
+PDF. Pictures and nested tables can force a table wider than its requested
+width. If the document or selected column changes while settings are open,
+reopen the panel before applying.</p>
+
+<p>You can also drag the boundary between two columns. The pointer changes
+to a horizontal resize cursor when a divider can move. Position the blue
+guide and release to resize those two columns; the table width and other
+columns stay the same. Escape cancels, and Undo restores the previous widths.
+Pictures, padding and nested tables limit how far a divider can move.</p>
+
+<p>Ordinary text replacement and Cut cannot cross cell boundaries; select a
+cell rectangle for bulk Copy/Cut/Paste. Plain-text export does not preserve
+the grid. Tables can continue across pages, but merging cells and splitting
+one row across pages are not supported.</p>
+
+<h2 id="styles">Reuse formatting with styles</h2>
+
+<ol>
+<li>Select uniformly formatted text.</li>
+<li>Choose <b>Format / Paragraph styles / Create style from selection</b>
+and enter a unique name.</li>
+<li>Select another paragraph and choose the saved style from that submenu.</li>
+</ol>
+
+<p>The submenu contains a small set of style shortcuts. <b>Apply paragraph
+style</b> accepts an exact name for any paragraph style, including those not
+shown as shortcuts. Updating the assigned style changes its
+definition and therefore other paragraphs that use it. These actions support
+undo. Direct formatting takes priority over a named style: use <b>Clear
+paragraph overrides</b> and, for selected characters, <b>Clear direct
+formatting</b> to expose the style's values.</p>
+
+<h2 id="find">Find and replace</h2>
+
+<p><b>Edit / Find and Replace</b> opens two fields. Search is literal and
+case-sensitive. <b>Whole words</b> requires Unicode word and grapheme boundaries
+at both ends. Find next wraps once. Replace changes the selected, verified
+match; Replace all changes up to 1,024 matches in one undoable operation.
+Larger replacements are refused as a whole. Escape closes the panel.</p>
+
+<h2 id="pages">Paper and page preview</h2>
+
+<p>The <b>View</b> menu selects A4 or Letter, rotates the paper and switches
+between 36-point and 54-point margins. These settings are saved in the
+document and support undo. One point is 1/72 inch.</p>
+
+<p><b>Paragraph / Start paragraph on a new page</b> toggles a page break before
+the selected paragraphs. A break before the first paragraph does not add an
+empty page. Splitting a paragraph retains the break on its first part.</p>
+
+<p><b>Pages</b> shows a fitted, read-only preview. Use Back and Next, or the
+arrow and Page Up/Page Down keys, to move between pages. Escape or Edit returns
+to editing. Preview and PDF use the same pagination and retained glyph
+geometry. Keep rules are honoured when a group fits; oversized groups split
+between lines and show a warning.</p>
+
+<h2 id="recovery">Recovery</h2>
+
+<p>TikuWrite periodically checkpoints unsaved work in a private session folder
+under <code>~/.local/share/TikuWrite/</code>. After an interrupted session,
+<b>File / Recover last draft</b> opens the newest available inactive checkpoint
+as a new copy. Recovery is explicit; it does not silently replace a fresh
+document. Keep regular saved copies: a crash before a checkpoint completes can
+lose the most recent edits.</p>
+
+<p>Recovery does not consume the old checkpoint. It can therefore remain
+available after you save a recovered copy. A recovery-storage error is shown
+in the status line.</p>
+
+<h2 id="limits">Supported document features</h2>
+
+<p>This editor supports a single main text body and one paper setup. It does
+not edit DOCX or ODT, floating pictures, multiple sections,
+headers, footers or
+footnotes. Use TikuDoc to view Office files. The text engine reports missing
+fonts and limited script shaping; Arabic, bidirectional text, advanced
+OpenType shaping and input-method preedit are not fully supported.</p>
+
+<p><a href="../index.html">Back to TikuDesktop Help</a></p>

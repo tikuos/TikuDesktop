@@ -1,0 +1,57 @@
+# shell: desktop
+# prefs: factory
+# open: /tmp/trk_home/documents
+# A long table continues with its linked and illustrated header on each page.
+wait 25
+click-row 0
+wait 2
+click-row 0
+wait 100
+expect-title report.tkrd
+expect-same-as-redraw
+click 150 140
+click 334 8
+wait 5
+expect-menu Repeat header rows
+menu-pick Repeat header rows
+wait 12
+key a ctrl
+key 2
+wait 12
+expect-same-as-redraw
+shot /tmp/tiku-write-header-settings.png
+key Return
+wait 12
+expect-title * report.tkrd
+expect-same-as-redraw
+key z ctrl
+wait 12
+expect-title report.tkrd
+click 683 66
+wait 60
+expect-same-as-redraw
+shot /tmp/tiku-write-continued-page1.png
+key Right
+wait 15
+expect-same-as-redraw
+shot /tmp/tiku-write-continued-page2.png
+expect-pixel 400 200 ddeeff
+expect-pixel 530 200 ff0000
+expect-pixel 300 239 707070
+key Right
+wait 15
+expect-same-as-redraw
+shot /tmp/tiku-write-continued-page3.png
+expect-pixel 400 200 ddeeff
+expect-pixel 530 200 ff0000
+expect-pixel 300 239 707070
+key Left
+wait 15
+expect-same-as-redraw
+key Escape
+wait 12
+expect-title report.tkrd
+expect-same-as-redraw
+key w ctrl
+wait 15
+expect-no-title TikuWrite

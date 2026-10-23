@@ -1,0 +1,52 @@
+# shell: desktop
+# prefs: factory
+# mkdir: /tmp/trk_home
+# file: ~/ruler.txt Paragraph rulers adjust the first line and other lines independently. This paragraph provides enough text to show a wrapped line while moving the markers and checking undo.
+wait 25
+click 980 30
+wait 4
+menu-pick Documents
+wait 4
+menu-pick TikuWrite
+wait 100
+key o ctrl
+wait 25
+expect-title Open
+click 400 200
+wait 4
+click 675 413
+wait 70
+expect-no-title Open
+expect-title * Untitled
+click 292 8
+wait 5
+expect-menu Paragraph ruler
+menu-pick Paragraph ruler
+wait 30
+expect-same-as-redraw
+shot /tmp/tiku-write-ruler.png
+press 130 105
+move 166 105
+wait 10
+expect-same-as-redraw
+expect-pixel 166 200 527da5
+shot /tmp/tiku-write-ruler-guide.png
+release 166 105
+wait 30
+expect-same-as-redraw
+key z ctrl
+wait 25
+expect-same-as-redraw
+key Down
+key Right shift
+wait 20
+expect-same-as-redraw
+key Return
+key s ctrl
+wait 25
+expect-title Save
+key Return
+wait 80
+expect-title document.tkrd
+expect-same-as-redraw
+shot /tmp/tiku-write-ruler-saved.png
