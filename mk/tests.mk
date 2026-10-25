@@ -1,3 +1,8 @@
+test_settings_SRCS := system/shared/core/tiku_trk_desktop_settings.c system/shared/core/tiku_trk_deskprefs.c system/shared/core/tiku_trk_background.c system/shared/core/tiku_trk_frame.c system/shared/core/tiku_trk_type_settings.c system/shared/core/tiku_trk_catalog_settings.c system/shared/core/tiku_trk_associations.c system/shared/core/tiku_trk_launch.c system/shared/core/tiku_trk_types.c system/shared/core/tiku_trk_settings.c system/shared/core/tiku_trk_prefs.c system/shared/core/tiku_trk_record_settings.c system/deskbar/tiku_trk_deskbar_prefs.c system/deskbar/tiku_trk_fontprefs.c
+test_record_settings_SRCS := $(test_settings_SRCS)
+test_default_settings_SRCS := $(test_settings_SRCS)
+test_catalog_settings_SRCS := $(test_settings_SRCS)
+test_type_settings_SRCS := $(filter-out system/shared/core/tiku_trk_type_settings.c,$(test_settings_SRCS))
 test_resource_session_SRCS := system/shared/core/tiku_trk_resource_session.c
 TEST_SOURCE_FLAGS := -DTIKU_TEST_SOURCE_ROOT=\"$(FOUNDATION_VIEW)\"
 # Suites are discovered from the four ownership groups and run by make test.
@@ -45,10 +50,10 @@ test_scroll_SRCS   := $(COMMON)
 test_launch_SRCS   := $(COMMON)
 test_launch_reports_SRCS := system/shared/core/tiku_trk_launch.c
 test_query_SRCS   := system/shared/ui/tiku_trk_find.c system/shared/core/tiku_trk_types.c
-test_notify_SRCS   := $(POSEVIEW) system/shared/core/tiku_trk_match.c system/shared/core/tiku_trk_clip.c system/shared/core/tiku_trk_task.c system/shared/core/tiku_trk_repaint.c system/shared/ui/tiku_trk_nodeicon.c system/shared/core/tiku_trk_types.c
+test_notify_SRCS   := $(POSEVIEW) system/shared/ui/poseview/tiku_trk_native_record.c system/shared/core/tiku_trk_match.c system/shared/core/tiku_trk_clip.c system/shared/core/tiku_trk_task.c system/shared/core/tiku_trk_repaint.c system/shared/ui/tiku_trk_nodeicon.c system/shared/core/tiku_trk_types.c
 test_title_SRCS   := $(COMMON) $(POSEVIEW) system/shared/ui/tiku_trk_titleview.c
 test_match_SRCS   := system/shared/core/tiku_trk_match.c
-test_deskbar_dock_SRCS   := $(COMMON) $(ICONS) $(DESKBAR) system/deskbar/tiku_trk_deskbar_prefs.c
+test_deskbar_dock_SRCS   := $(COMMON) $(ICONS) $(DESKBAR)
 test_deskbar_hover_SRCS := $(test_deskbar_dock_SRCS)
 test_deskbar_motion_SRCS := $(test_deskbar_dock_SRCS)
 test_deskbar_motion_LDLIBS := $(X11_LIBS) -lm
@@ -162,7 +167,7 @@ test_host_render_SRCS := system/shared/shell/tiku_trk_splash.c
 test_reader_large_LDLIBS := $(X11_LIBS) -lm
 test_fonts_window_SRCS := $(test_fontprefs_SRCS)
 test_fonts_window_LDLIBS := $(X11_LIBS) -lm
-test_app_groups_SRCS := $(COMMON) $(ICONS) $(DESKBAR) system/deskbar/tiku_trk_deskbar_prefs.c
+test_app_groups_SRCS := $(COMMON) $(ICONS) $(DESKBAR)
 test_app_groups_LDLIBS := $(X11_LIBS) -lm
 test_openwith_apps_SRCS := $(COMMON) system/shared/ui/windows/tiku_trk_open_with_window.c
 test_openwith_apps_LDLIBS := $(X11_LIBS) -lm
@@ -194,7 +199,7 @@ test_panel_SRCS   := $(COMMON) $(POSEVIEW)
 test_nodeicon_SRCS   := $(COMMON)
 test_navmenu_SRCS   := $(COMMON)
 test_navigator_SRCS   := system/shared/ui/tiku_trk_navigator.c
-test_dbdrop_SRCS   := $(COMMON) $(ICONS) $(DESKBAR) system/deskbar/tiku_trk_deskbar_prefs.c system/shared/ui/tiku_trk_shortcuts.c
+test_dbdrop_SRCS   := $(COMMON) $(ICONS) $(DESKBAR) system/shared/ui/tiku_trk_shortcuts.c
 test_drop_controller_SRCS := $(test_dbdrop_SRCS) $(POSEVIEW) \
     system/shared/ui/commands/tiku_trk_drop_controller.c \
     system/shared/ui/tiku_trk_cwmenu.c system/deskbar/tiku_trk_desktop_view.c \
@@ -414,7 +419,7 @@ test_registry_SRCS := system/shared/core/tiku_trk_task.c
 test_registry_LDLIBS := $(X11_LIBS) -lm
 test_startup_CFLAGS := -ffunction-sections -fdata-sections
 test_associations_CFLAGS := -ffunction-sections -fdata-sections
-test_associations_SRCS := system/shared/core/tiku_trk_associations.c \
+test_associations_SRCS := system/shared/core/tiku_trk_type_settings.c system/shared/core/tiku_trk_catalog_settings.c system/shared/core/tiku_trk_associations.c \
     system/shared/core/tiku_trk_launch.c system/shared/core/tiku_trk_types.c
 test_associations_LDLIBS := $(X11_LIBS) -lm $(GC_SECTIONS)
 test_startup_SRCS := system/shared/core/tiku_trk_frame.c
@@ -614,3 +619,34 @@ test-host-render: $(BUILD)/tests/test_host_render
 ifeq ($(UNAME_S),Linux)
 test_print_rpc_LDLIBS := -Wl,--wrap=tiku_remote_session_tell
 endif
+
+test_catalog_window_CFLAGS := $(test_associations_CFLAGS)
+test_catalog_window_SRCS := $(test_associations_SRCS)
+test_catalog_window_LDLIBS := $(test_associations_LDLIBS)
+
+test_openwith_settings_SRCS := $(test_settings_SRCS) system/shared/core/tiku_trk_alert.c
+test_openwith_settings_LDLIBS := $(X11_LIBS) -lm
+
+test_info_preferences_CFLAGS := -ffunction-sections -fdata-sections
+test_info_preferences_SRCS := $(test_settings_SRCS)
+test_info_preferences_LDLIBS := $(X11_LIBS) -lm $(GC_SECTIONS)
+
+test_rename_focus_CFLAGS := -ffunction-sections -fdata-sections
+test_rename_focus_SRCS := $(COMMON) $(POSEVIEW) system/shared/ui/windows/tiku_trk_folder_edit.c
+test_rename_focus_LDLIBS := $(X11_LIBS) -lm $(GC_SECTIONS)
+
+test_desktop_settings_SRCS := $(test_settings_SRCS)
+test_resource_observer_SRCS := system/shared/core/tiku_trk_resource_observer.c
+test_native_record_SRCS := system/shared/ui/poseview/tiku_trk_native_record.c
+test_native_settings_SRCS := $(test_settings_SRCS) system/shared/core/tiku_trk_native_settings.c system/shared/ui/poseview/tiku_trk_native_record.c
+test_session_records_SRCS := system/shared/core/tiku_trk_frame.c system/shared/shell/session/tiku_trk_session_controller.c
+ifeq ($(UNAME_S),Linux)
+test_native_settings_LDLIBS := -Wl,--wrap=tiku_store_update_run
+endif
+test_poseview_records_SRCS := $(COMMON) $(POSEVIEW)
+
+test_window_resources_SRCS := system/shared/core/tiku_trk_window_resources.c
+
+test_lifecycle_resources_SRCS := system/shared/core/tiku_trk_lifecycle_resources.c
+
+test_app_resources_SRCS := system/shared/core/tiku_trk_app_resources.c

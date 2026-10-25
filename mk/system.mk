@@ -36,8 +36,6 @@ SCRIPT_ENGINE_DESKTOP := $(SCRIPT_ENGINE) \
 SCRIPT_STUB   := system/shared/shell/tiku_trk_script_stub.c
 
 DESKTOP_CONTROLLERS := system/deskbar/tiku_trk_deskbar_roster.c \
-                       system/deskbar/tiku_trk_deskbar_prefs.c \
-                       system/deskbar/tiku_trk_fontprefs.c \
                        system/deskbar/tiku_trk_desktop_view.c \
                        system/shared/ui/commands/tiku_trk_drop_controller.c \
                        system/shared/ui/commands/tiku_trk_folder_actions.c \
@@ -66,7 +64,20 @@ DESKTOP_CONTROLLERS := system/deskbar/tiku_trk_deskbar_roster.c \
 # What is left of Tracker's own core, now that the nodes, attributes,
 # queries and volumes have gone down into the Storage kit and the words
 # into Support. The core also composes the desktop resource service.
-CORE := system/shared/core/tiku_trk_resource_session.c \
+CORE := system/deskbar/tiku_trk_deskbar_prefs.c \
+        system/deskbar/tiku_trk_fontprefs.c \
+        system/shared/core/tiku_trk_catalog_settings.c \
+        system/shared/core/tiku_trk_type_settings.c \
+        system/shared/core/tiku_trk_record_settings.c \
+        system/shared/core/tiku_trk_desktop_settings.c \
+        system/shared/core/tiku_trk_native_settings.c \
+        system/shared/ui/poseview/tiku_trk_native_record.c \
+        system/shared/core/tiku_trk_resource_observer.c \
+        system/shared/core/tiku_trk_window_resources.c \
+        system/shared/core/tiku_trk_lifecycle_resources.c \
+        system/shared/core/tiku_trk_app_resources.c \
+        system/shared/core/tiku_trk_settings.c \
+        system/shared/core/tiku_trk_resource_session.c \
         system/shared/core/tiku_trk_task.c system/shared/core/tiku_trk_match.c \
         system/shared/core/tiku_trk_associations.c \
         system/shared/core/tiku_trk_clip.c system/shared/core/tiku_trk_drag.c \
@@ -84,7 +95,8 @@ UI_SUPPORT := system/shared/ui/tiku_trk_navmenu.c \
 COMMON := $(CORE) $(UI_SUPPORT)
 
 # tiku_trk_poseview, one composition over the files of one directory.
-POSEVIEW := system/shared/ui/poseview/tiku_trk_poseview.c \
+POSEVIEW := system/shared/ui/poseview/tiku_trk_poseview_records.c \
+            system/shared/ui/poseview/tiku_trk_poseview.c \
             system/shared/ui/poseview/tiku_trk_poseview_sort.c \
             system/shared/ui/poseview/tiku_trk_poseview_load.c \
             system/shared/ui/poseview/tiku_trk_poseview_select.c \
@@ -130,7 +142,11 @@ TRACKER_SRC := $(COMMON) system/shared/shell/tiku_trk_addon.c \
                system/shared/ui/windows/tiku_trk_folder_window.c \
                $(TRACKER_SHELL) system/shared/shell/tiku_trk_launcher.c
 # The desktop shell itself, one composition over several files.
-DESKTOP_SHELL := system/desktop/tiku_trk_desktop.c \
+DESKTOP_SHELL := system/desktop/tiku_desktop_lifecycle_vfs.c \
+                 system/desktop/tiku_desktop_catalog_vfs.c \
+                 system/desktop/tiku_desktop_actions_vfs.c \
+                 system/desktop/tiku_trk_desktop_resources.c \
+                 system/desktop/tiku_trk_desktop.c \
                  system/desktop/tiku_trk_desktop_events.c \
                  system/desktop/tiku_trk_desktop_cursor.c \
                  system/desktop/tiku_trk_desktop_lifecycle.c \

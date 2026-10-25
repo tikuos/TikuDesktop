@@ -28,3 +28,7 @@ check-resource-service: sdk core
 	@python3 "$(FOUNDATION_ROOT)/tests/integration/run_resource_sdk.py" \
 	    --sdk "$(SDK_DIR)" --desktop "$(SYSTEM)/TikuDesktop" \
 	    --evidence "$(BUILD)/checks/resource-service"
+
+.PHONY: check-settings-service
+check-settings-service: core sdk
+	python3 "$(FOUNDATION_ROOT)/tests/integration/run_settings_sdk.py" --sdk "$(SDK_DIR)" --desktop "$(SYSTEM)/TikuDesktop" --evidence "$(BUILD)/checks/settings-service"

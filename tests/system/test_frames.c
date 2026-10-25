@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "tiku_work.h"
 #include "../../system/desktop/tiku_trk_desktop_draw.c"
 #include "../../system/deskbar/bar/tiku_trk_deskbar_private.h"
 
@@ -33,6 +34,16 @@ static void preference_click(tiku_window_t *window, int x, int y)
     assert(tiku_window_send(window, &ev));
 }
 
+/** @brief Click the center of the control published under an exact native label. */
+static void preference_control(tiku_workspace_t *workspace,tiku_window_t *window,const char *label)
+{
+    char facts[16384],needle[256];tiku_rect_t rectangle;const char *found;
+    assert(tiku_workspace_controls(workspace,window,facts,sizeof facts));
+    snprintf(needle,sizeof needle,"\"%s\"\t",label);found=strstr(facts,needle);assert(found);
+    assert(sscanf(found+strlen(needle),"%d %d %d %d",&rectangle.x,&rectangle.y,&rectangle.w,&rectangle.h)==4);
+    preference_click(window,rectangle.x+rectangle.w/2,rectangle.y+rectangle.h/2);
+}
+
 /** @brief Reduce motion: its tick box, Defaults, Revert and the file. */
 static void motion_preference(desktop_t *app)
 {
@@ -53,18 +64,10 @@ static void motion_preference(desktop_t *app)
         tiku_font_set_size(size);
         tiku_trk_desktop_prefs_window_open(&controller);
         assert(controller.window);
-        tiku_rect_t content = tiku_window_content(controller.window);
         tiku_rect_t frame = controller.window->frame;
-        int button_y = frame.h - tiku_window_tab_h() -
-            TIKU_WINDOW_BORDER - tiku_ui_button_h() - 16;
-        int motion_y = button_y - 18 - tiku_ui_row_h();
-        int icon_y = motion_y - 12 - tiku_ui_button_h();
-        int plus_x = content.x + content.w - 16 - tiku_ui_step_w() / 2;
         assert(frame.y >= 0 && frame.y + frame.h <= 680);
-        assert(motion_y > 0 && motion_y + tiku_ui_row_h() < button_y);
         assert(!controller.model.value.reduce_motion);
-        preference_click(controller.window, content.x + 24,
-                         content.y + motion_y + 8);
+        preference_control(app->desk,controller.window,tiku_str("prefs.desktop.reduce_motion"));
         assert(controller.model.value.reduce_motion &&
                tiku_trk_prefs_get(prefs_model(app), "ReduceMotion"));
         tiku_trk_prefs_t saved;
@@ -75,26 +78,19 @@ static void motion_preference(desktop_t *app)
         /* A click that leaves Reduce motion as it was writes no settings:
          * the icon size's plus steps the size and nothing else. */
         assert(!unlink(path));
-        preference_click(controller.window, plus_x,
-                         content.y + icon_y + tiku_ui_button_h() / 2);
+        preference_control(app->desk,controller.window,"+");
         assert(controller.model.value.icon_size > 32);
         assert(access(path, F_OK) != 0);
         /* Revert is the second button; actions happen on release. */
-        int revert_x = content.x + 16 +
-            tiku_ui_button_w(tiku_str("button.defaults"), 112) + 10;
-        preference_click(controller.window, revert_x + 12,
-                         content.y + button_y + 8);
+        preference_control(app->desk,controller.window,tiku_str("button.revert"));
         assert(!tiku_trk_prefs_get(prefs_model(app), "ReduceMotion"));
         assert(!access(path, F_OK));
-        preference_click(controller.window, content.x + 24,
-                         content.y + motion_y + 8);
+        preference_control(app->desk,controller.window,tiku_str("prefs.desktop.reduce_motion"));
         tiku_trk_desktop_prefs_window_close(&controller);
         tiku_trk_desktop_prefs_window_open(&controller);
         /* Opening again reads the setting back. */
         assert(controller.model.value.reduce_motion);
-        content = tiku_window_content(controller.window);
-        preference_click(controller.window, content.x + 24,
-                         content.y + button_y + 8);
+        preference_control(app->desk,controller.window,tiku_str("button.defaults"));
         assert(!controller.model.value.reduce_motion &&
                !tiku_trk_prefs_get(prefs_model(app), "ReduceMotion"));
         tiku_trk_desktop_prefs_window_close(&controller);
@@ -267,12 +263,18 @@ int main(void)
         app->store = tiku_store_memory_open();
         assert(app->store);
         tiku_trk_deskbar_prefs_init(&app->deskbar_prefs_window.model);
+        tiku_trk_fontprefs_init(&app->fonts_window.model);
+        app->record_settings=tiku_trk_record_settings_open(app->store,&app->deskbar_prefs_window.model,&app->fonts_window.model,NULL,NULL);
+        assert(app->record_settings);
         tiku_trk_deskbar_set_show_replicants(app->deskbar, 0);
         deskbar_pick_dispatch(app, &pick, 0, 0);
+        for (int i=0;i<5000 && tiku_work_busy();i++) {tiku_work_collect();usleep(1000);}
+        assert(!tiku_work_busy());
         assert(!app->deskbar_prefs_window.model.value.show_replicants);
         tiku_trk_deskbar_prefs_init(&saved);
         assert(!tiku_trk_deskbar_prefs_load(&saved, app->store) &&
                !saved.value.show_replicants);
+        tiku_trk_record_settings_close(app->record_settings);app->record_settings=NULL;
         tiku_store_free(app->store);
         app->store = NULL;
     }

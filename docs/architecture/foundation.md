@@ -99,3 +99,35 @@ Existing product settings retain their current controllers.
 product SDK and runs discovery, read, change, watch, failure, stream and job flows
 against the headless product. It uses an isolated home and checks orderly endpoint
 cleanup. The framework runtime contract documents protocol limits and ownership.
+
+The shared preference controller uses the existing settings table and file for
+GUI submissions, asynchronous resource changes and content-based external reload.
+`make check-settings-service` checks theme/menu and font changes in both
+directions, failed saves, external record edits and restart with relocated SDK
+clients. Deskbar and Fonts use staged updates of the existing session sidecar;
+font aliases and profiles share that owner. Unrelated cached and external record
+changes survive persistence. The endpoint remains opt-in through
+`STOMME_RESOURCE_DIRECTORY`.
+
+The settings provider also lists loaded file-type records and preferred-handler
+resources under `/settings/file-types` and `/settings/associations`. Association
+Save uses staged session updates and rejects stale drafts. Handler snapshots
+report the launcher's actual fallback. Type metadata describes the loaded
+catalog; editing the type database takes effect after desktop restart.
+
+Open With and Get Info submit preferred-handler changes through the shared
+association owner. Make-preferred waits for persistence before launching;
+failed saves keep the chooser open. Retargeting or closing it detaches the
+launch completion while accepted persistence retains its lifecycle.
+
+Window and workspace resources publish current identities, geometry, focus and
+visibility. Window actions use native owners and retain application close
+vetoes. Application catalog resources derive launch/open operations from loaded
+manifests; instance controls preserve native activation and quit decisions.
+
+Runner and supervisor observations report their actual process lifetimes and
+exit reports. File jobs expose generation-bound progress and cancellation.
+Worker observations retain lifecycle outcomes and report unsupported cancellation
+and application results explicitly. Session requests retain confirmation and use
+the saved-folder controller; notifications copy the native alert and status state.
+The shared runtime contract documents these resources and their authority checks.
