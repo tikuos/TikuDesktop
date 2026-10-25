@@ -20,7 +20,8 @@
     "terminal",
     "circuit",
     "marker",
-    "editor-common"
+    "editor-common",
+    "resource-inspector"
   ],
   "shell": "desktop"
 }

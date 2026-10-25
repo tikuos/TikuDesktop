@@ -31,6 +31,31 @@ static void check(int condition, const char *message)
     }
 }
 
+/** @brief Resolve an offset frame belonging to this executable. */
+static void own_frame(const char *suffix, char *out, size_t capacity)
+{
+    char image[1024], raw[2048];
+    if (tiku_sys_self_path(image, sizeof image)) {
+        failures++;
+        out[0] = '\0';
+        return;
+    }
+    snprintf(raw, sizeof raw, "%s%s", image, suffix);
+    tiku_sys_frame_name(raw, out, capacity);
+}
+
+/** @brief Check readable fallback against the current executable's basename. */
+static int unnamed(const char *result, const char *offset)
+{
+    char image[1024], expected[1200];
+    if (tiku_sys_self_path(image, sizeof image))
+        return 0;
+    const char *leaf = strrchr(image, '/');
+    snprintf(expected, sizeof expected, "%s %s", leaf ? leaf + 1 : image,
+             offset);
+    return !strcmp(result, expected);
+}
+
 /** @brief Check that the helper gets the executable path as one argument. */
 static void resolve_valid(void)
 {
@@ -40,11 +65,10 @@ static void resolve_valid(void)
         failures++;
         return;
     }
-    tiku_sys_frame_name("TikuDesktop(+0x123) [0x123]", result,
-                        sizeof result);
+    own_frame("(+0x123) [0x123]", result, sizeof result);
     check(!strcmp(result, "fixture_symbol"),
           "symbol lookup preserves executable and offset arguments");
-    tiku_sys_frame_name("TikuDesktop(+0x456)", result, sizeof result);
+    own_frame("(+0x456)", result, sizeof result);
     check(!strcmp(result, "an earlier build's +0x456"),
           "unknown addresses retain the offset");
 }
@@ -105,8 +129,7 @@ int main(int argc, char **argv)
         return 1;
     }
     snprintf(marker, sizeof marker, "%s/injected", directory);
-    tiku_sys_frame_name("TikuDesktop(+0;touch${IFS}injected)", result,
-                        sizeof result);
+    own_frame("(+0;touch${IFS}injected)", result, sizeof result);
     int injected = access(marker, F_OK) == 0;
     check(!injected, "frame text cannot execute a shell command");
     if (injected) {
@@ -133,11 +156,11 @@ int main(int argc, char **argv)
         setenv("PATH", directory, 1)) return 1;
     resolve_valid();
     unlink("called");
-    const char *bad[] = {"TikuDesktop(+0;echo invalid)",
-        "TikuDesktop(+)", "TikuDesktop(+0x)", "TikuDesktop(+0xzz)",
-        "TikuDesktop(+0x123", "TikuDesktop(+0x12345678901234567890)"};
+    const char *bad[] = {
+        "(+0;echo invalid)", "(+)",     "(+0x)",
+        "(+0xzz)",           "(+0x123", "(+0x12345678901234567890)"};
     for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
-        tiku_sys_frame_name(bad[i], result, sizeof result);
+        own_frame(bad[i], result, sizeof result);
         check(access("called", F_OK) != 0,
               "malformed offsets do not launch the helper");
         unlink("called");
@@ -146,8 +169,11 @@ int main(int argc, char **argv)
                         sizeof result);
     check(!strcmp(result, "example.so: named_symbol"),
           "library symbols do not need the helper");
-    tiku_sys_frame_name("TikuDesktop(+0x789)", result, sizeof result);
-    check(!strcmp(result, "TikuDesktop +0x789"),
+    tiku_sys_frame_name("/lib/example.so(+0x123)", result, sizeof result);
+    check(!strcmp(result, "example.so +0x123") && access("called", F_OK) != 0,
+          "offsets in another image do not use this executable's symbols");
+    own_frame("(+0x789)", result, sizeof result);
+    check(unnamed(result, "+0x789"),
           "a failing helper leaves a readable frame");
 
     snprintf(executable, sizeof executable, "%s/program with spaces",
@@ -167,8 +193,8 @@ int main(int argc, char **argv)
     unlink(executable);
     unlink(helper);
     unlink("called");
-    tiku_sys_frame_name("TikuDesktop(+0x123)", result, sizeof result);
-    check(!strcmp(result, "TikuDesktop +0x123"),
+    own_frame("(+0x123)", result, sizeof result);
+    check(unnamed(result, "+0x123"),
           "an unavailable helper leaves a readable frame");
 
     if (saved_path) {

@@ -29,6 +29,7 @@ enum { OV_OPEN = 1, OV_EXPORT, OV_CLOSE, OV_COPY, OV_SELECT, OV_FIND,
 
 /** @brief The viewer's state; only the loop touches it. */
 struct tiku_officeview {
+    uint64_t resource_document; /**< successful native file adoption counter */
     tiku_workspace_t      *workspace;
     tiku_window_t         *window;
     int                   *dirty;       /* the application's: draw again  */
@@ -243,6 +244,7 @@ static void ov_view_opened(void *ctx, tiku_pdf_err_t err)
     if (!c->workspace) return;
     if (err == TIKU_PDF_OK) {
         snprintf(c->path, sizeof c->path, "%s", c->opening);
+        c->resource_document++;
         c->said[0] = '\0';
         c->to_view = 1;
         tiku_list_init(&c->outline, 1);
@@ -509,4 +511,54 @@ int tiku_officeview_export_to(tiku_officeview_t *c, const char *pdf)
 const char *tiku_officeview_path(tiku_officeview_t *c)
 {
     return c && ov_open_now(c) ? c->path : "";
+}
+
+/** @brief Copy native office-view page, viewport and readonly selection capabilities. */
+static tiku_resource_error_t resource_observe(void *state, const char *field,
+                                              tiku_msg_t **out)
+{
+    tiku_officeview_t *c = state;
+    tiku_msg_t *value = tiku_app_resource_object(0);
+    int bad = 0;
+    if (!strcmp(field, "selection")) {
+        tiku_pdf_view_selection_t selected = {0};
+        int available = tiku_pdf_view_selection(c->view, &selected);
+        bad |= VR_BOOL(value, "available", available);
+        bad |= VR_BOOL(value, "selected", selected.selected);
+        bad |= VR_BOOL(value, "copy_allowed", selected.copy_allowed);
+        bad |= VR_INT(value, "anchor_page", selected.anchor_page);
+        bad |= VR_INT(value, "anchor_character", selected.anchor);
+        bad |= VR_INT(value, "focus_page", selected.focus_page);
+        bad |= VR_INT(value, "focus_character", selected.focus);
+    } else if (!strcmp(field, "view")) {
+        bad |= VR_INT(value, "page", tiku_pdf_view_page(c->view));
+        bad |= VR_INT(value, "fit", tiku_pdf_view_fitted(c->view));
+        bad |= VR_NUMBER(value, "scale", tiku_pdf_view_scale(c->view));
+        bad |= VR_BOOL(value, "presenting", c->presenting);
+        bad |= VR_BOOL(value, "outline", c->outline_on);
+    } else if (!strcmp(field, "objects"))
+        bad |= VR_INT(value, "pages", tiku_pdf_view_pages(c->view));
+    else {
+        tiku_msg_free(value);
+        return TIKU_RESOURCE_UNSUPPORTED;
+    }
+    if (bad) {
+        tiku_msg_free(value);
+        return TIKU_RESOURCE_NO_MEMORY;
+    }
+    *out = value;
+    return 0;
+}
+vr_document_t tiku_officeview_resource_document(tiku_officeview_t *c)
+{
+    return (vr_document_t){.identity = c->resource_document + 1,
+                           .generation = c->resource_document + 1,
+                           .path = c->path,
+                           .type = c->kind.slides ? "office/slides"
+                                                  : "office/document",
+                           .available = tiku_pdf_view_pages(c->view) > 0,
+                           .busy = c->exporting,
+                           .read_only = 1,
+                           .controller = c,
+                           .observe = resource_observe};
 }

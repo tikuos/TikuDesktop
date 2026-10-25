@@ -101,6 +101,22 @@ tiku_work_post_slow(const tiku_work_job_t *job)
 int tiku_work_collect(void) { return 0; }
 int tiku_work_cancelled(const void *ctx) { (void)ctx; return 0; }
 int tiku_work_busy(void) { return njobs; }
+/** @brief Copy the deterministic queue through the native observation contract. */
+size_t tiku_work_observe(tiku_work_observation_t *out, size_t capacity)
+{
+    for (size_t i = 0; out && i < (size_t)njobs && i < capacity; i++) {
+        out[i] = (tiku_work_observation_t){.id = i + 1, .state = 0};
+        snprintf(out[i].key, sizeof out[i].key, "%s", jobs[i].key);
+    }
+    return (size_t)njobs;
+}
+/** @brief Report queue counts without initializing the native worker pool. */
+void tiku_work_stats(tiku_work_stats_t *out)
+{
+    if (out)
+        *out = (tiku_work_stats_t){
+            .active = njobs, .queued = njobs, .posted = njobs};
+}
 
 /** @brief Run every job queued, in order, as one worker would; a cancelled
  *         one is only freed. */

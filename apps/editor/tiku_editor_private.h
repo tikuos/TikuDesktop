@@ -246,6 +246,9 @@ void tiku_editor_search_refresh(edit_state_t *st);
 void tiku_editor_search_clear(edit_state_t *st);
 void tiku_editor_select_matches(edit_state_t *st);
 
+/** @brief Validate, persist and apply native defaults; -1 refuses, 1 means unsynced. */
+int tiku_editor_preferences_replace(edit_state_t *,
+                                    const editor_preferences_t *);
 void tiku_editor_preferences_load(edit_state_t *st);
 void tiku_editor_preferences_apply(edit_state_t *st,
                                    const editor_preferences_t *prefs);

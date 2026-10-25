@@ -206,12 +206,14 @@ $(BUILD)/examples/tiku_document_model: \
 	$(CC) $(CFLAGS) -o $@ $^ -pthread
 
 $(BUILD)/examples/tiku_document_layout: \
-        $(OBJ)/examples/document/tiku_document_layout.o $(DESK_LIBS)
+        $(OBJ)/examples/document/tiku_document_layout.o \
+        $(LIB_DOCUMENT_FORMATS) $(LIB_DOCUMENT) $(DESK_LIBS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm $(X11_LIBS) -pthread
 
 $(BUILD)/examples/tiku_document_file: \
-        $(OBJ)/examples/document/tiku_document_file.o $(DESK_LIBS)
+        $(OBJ)/examples/document/tiku_document_file.o \
+        $(LIB_DOCUMENT_FORMATS) $(LIB_DOCUMENT) $(DESK_LIBS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lm
 
@@ -442,3 +444,9 @@ APP_SDK_IDENTITY := $(shell python3 -c 'import json; print(json.load(open("$(APP
 APP_BASE_CFLAGS := $(CFLAGS) $(KIT_INC) $(APP_INC)
 APP_BASE_LDFLAGS := $(LDFLAGS) $(X11_LIBS) -lm -pthread
 -include apps/catalog.mk apps/rules.mk
+
+# The shared Resource Inspector is an independently packaged application.
+apps loadable: $(APPS_D)/resource-inspector/ResourceInspector.so $(APPS_D)/resource-inspector/app.manifest
+$(APPS_D)/resource-inspector/app.manifest: apps/resource-inspector/resource-inspector.app | prepare-build
+	@mkdir -p $(dir $@)
+	cp $< $@

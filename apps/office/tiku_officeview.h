@@ -7,6 +7,7 @@
 #define TIKU_OFFICEVIEW_H_
 
 #include "tiku_window.h"
+#include "tiku_viewer_resources.h"
 
 /** @brief The viewer: its window, the file shown and its jobs. */
 typedef struct tiku_officeview tiku_officeview_t;
@@ -46,5 +47,8 @@ int tiku_officeview_file(tiku_officeview_t *c, const char *path);
 int tiku_officeview_export_to(tiku_officeview_t *c, const char *pdf);
 /** @brief The file shown, "" when there is none. */
 const char *tiku_officeview_path(tiku_officeview_t *c);
+
+/** @brief Borrow current native document facts for the owning application provider. */
+vr_document_t tiku_officeview_resource_document(tiku_officeview_t *);
 
 #endif

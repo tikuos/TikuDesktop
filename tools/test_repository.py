@@ -10,12 +10,89 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
+from source_layout import source_root, source_path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class RepositoryTests(unittest.TestCase):
     """Exercise independent checkout contracts without opening a device."""
+
+    def test_selected_source_view(self):
+        """Source checks use the selected product view and isolate fixture roots."""
+        with tempfile.TemporaryDirectory(prefix='selected-source-') as directory:
+            root=Path(directory).resolve()
+            default=root/'build/foundation'
+            selected=root/'alternate/foundation'
+            other=root/'fixture'
+            for path in [default,selected,other/'build/foundation']:path.mkdir(parents=True)
+            (selected/'marker').write_text('selected')
+            for value in [str(selected),'alternate/foundation']:
+                with self.subTest(view=value),patch.dict(os.environ,{
+                    'STOMME_SOURCE_PRODUCT':str(root),'STOMME_SOURCE_VIEW':value}):
+                    self.assertEqual(source_root(root),selected)
+                    self.assertEqual(source_path(root,'marker'),selected/'marker')
+                    self.assertEqual(source_root(other),other/'build/foundation')
+
+    def test_architecture_selected_view(self):
+        """Scan selected native boundaries and reject platform logic elsewhere."""
+        import contextlib
+        import importlib.util
+        import io
+        with tempfile.TemporaryDirectory(prefix='architecture-view-') as directory:
+            view=Path(directory)
+            for name in ['kits/application/tiku_resource_channel.c',
+                         'kits/application/tiku_resource_endpoint.c',
+                         'kits/storage/tiku_state_attribute.c',
+                         'kits/support/tiku_resource_render.c']:
+                path=view/name
+                path.parent.mkdir(parents=True,exist_ok=True)
+                path.write_text('#if defined(__linux__)\n#endif\n')
+            (view/'system').mkdir()
+            with patch.dict(os.environ,{'STOMME_SOURCE_PRODUCT':str(ROOT),
+                                       'STOMME_SOURCE_VIEW':str(view)}):
+                spec=importlib.util.spec_from_file_location('architecture_fixture',ROOT/'tools/check_architecture.py')
+                module=importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+            self.assertEqual(module.SOURCE_ROOT,view)
+            with patch.object(module,'ownership',return_value=[]),contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(module.main(),0)
+                path=view/'system/tiku_ordinary.c'
+                path.write_text('#if defined(__linux__)\n#endif\n')
+                self.assertEqual(module.main(),1)
+
+    def test_document_example_links(self):
+        """Document examples link their selected provider archives before consumers."""
+        for name in ['tiku_document_layout', 'tiku_document_file']:
+            target = 'build/examples/' + name
+            result = subprocess.run(['make', '-Bn', target], cwd=ROOT,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            link = next(line for line in result.stdout.splitlines()
+                        if '-o ' + target + ' ' in line)
+            archives = [part for part in link.split() if part.endswith('.a')]
+            expected = ['build/lib/libtiku_document_formats.a',
+                        'build/lib/libtiku_document.a',
+                        'build/lib/libtiku_translation.a']
+            for archive in expected:
+                self.assertIn(archive, archives)
+            self.assertLess(archives.index(expected[0]), archives.index(expected[1]))
+            self.assertLess(archives.index(expected[1]), archives.index(expected[2]))
+
+    @unittest.skipUnless(os.uname().sysname == 'Linux', 'GNU linker wrapper')
+    def test_thumbnail_stat_wrapper_link(self):
+        """The Linux freshness fixture intercepts stat through its real link rule."""
+        target = 'build/tests/test_thumb_freshness'
+        result = subprocess.run(['make', '-Bn', target], cwd=ROOT,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        link = next(line for line in result.stdout.splitlines()
+                    if '-o ' + target + ' ' in line)
+        lines = result.stdout.splitlines()
+        at = lines.index(link)
+        command = link + ' ' + lines[at + 1]
+        self.assertIn('-Wl,--wrap=stat', command.split())
 
     def test_stomme_pin(self):
         """The Git submodule and source-content lock select the same framework."""

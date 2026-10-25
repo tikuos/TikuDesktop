@@ -13,10 +13,11 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from source_layout import source_root
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ROOT = ROOT / "build/foundation" if (ROOT / "build/foundation/system").is_dir() else ROOT
+SOURCE_ROOT = source_root(ROOT)
 TRACKER_SRC = SOURCE_ROOT / "system"
 KITS = SOURCE_ROOT / "kits"
 
@@ -59,6 +60,10 @@ PLATFORM_SEAM = {
     "tiku_state.c",             # the one place xattrs are spoken
     "tiku_app.c", "tiku_app_load.c", "tiku_client.c",
     "tiku_backend_posix.c",     # the stamp's section, written and read
+    "tiku_resource_channel.c",  # native peer credentials on accepted sockets
+    "tiku_resource_endpoint.c", # native peer credentials on connected sockets
+    "tiku_state_attribute.c",   # pinned descriptor extended-attribute APIs
+    "tiku_resource_render.c",   # native locale declarations
     "tiku_link_tcp.c",          # SO_NOSIGPIPE where there is no MSG_
 }
 

@@ -18,6 +18,8 @@
 
 #include "../../apps/ide/tiku_ide_private.h"
 #include "tiku_host.h"
+#include "tiku_app_resources.h"
+extern const tiku_app_resource_export_t tiku_app_resources_v1;
 #include "tiku_msg.h"
 #include "tiku_remote.h"
 
@@ -938,6 +940,82 @@ static void page_menus(ide_t *st)
     tiku_ide_edit_drop(st, b);
     tiku_ide_edit_drop(st, a);
 }
+/** @brief Capture the owner-resolved native source selection precondition. */
+static void resource_token(ide_t *st, tiku_app_resources_t *owner,
+                           const char *root, char out[65])
+{
+    char path[256];
+    snprintf(path, sizeof path, "%s/selection", root);
+    tiku_resource_snapshot_t value = {0};
+    assert(!tiku_app_resources_v1.capture(st, owner, path, &value));
+    assert(tiku_app_resource_text(value.applied, "context", out, 65));
+    tiku_resource_snapshot_clear(&value);
+}
+/** @brief Invoke a native source command with an owned typed context. */
+static tiku_resource_error_t
+resource_command(ide_t *st, tiku_app_resources_t *owner, const char *root,
+                 const char *name, const char *context)
+{
+    char path[256];
+    snprintf(path, sizeof path, "%s/commands/%s", root, name);
+    tiku_msg_t *input = tiku_app_resource_object(0);
+    assert(!tiku_app_resource_member(
+        input, "context",
+        tiku_resource_value_string(TIKU_RESOURCE_TEXT, context)));
+    tiku_resource_snapshot_t result = {0};
+    tiku_resource_effect_t effect = 0;
+    tiku_resource_error_t error = tiku_app_resources_v1.change(
+        st, owner, path, input, 1, &result, &effect);
+    tiku_msg_free(input);
+    tiku_resource_snapshot_clear(&result);
+    return error;
+}
+/** @brief Exercise source resources without board access or bypassing the file controller. */
+static void page_resources(ide_t *st)
+{
+    setenv("STOMME_RESOURCE_DIRECTORY", dir, 1);
+    tiku_app_descriptor_t descriptor = {.id = "source-test", .name = "Source"};
+    tiku_app_resources_t *owner =
+        tiku_app_resources_new(&services, &descriptor, &tiku_app_resources_v1);
+    assert(owner);
+    edit_t *e = page(st, "resources.bas", "10 END\n", 7);
+    char root[128], token[65];
+    snprintf(
+        root, sizeof root, "documents/%s",
+        tiku_app_resources_document(owner, tiku_editdoc_identity(e->doc)));
+    assert(!tiku_codeview_insert(e->view, "!", 1, 0));
+    resource_token(st, owner, root, token);
+    assert(!resource_command(st, owner, root, "undo", token));
+    assert(!tiku_editdoc_modified(e->doc));
+    assert(resource_command(st, owner, root, "redo", token) ==
+           TIKU_RESOURCE_STALE);
+    resource_token(st, owner, root, token);
+    assert(!resource_command(st, owner, root, "redo", token));
+    assert(tiku_editdoc_modified(e->doc));
+    resource_token(st, owner, root, token);
+    assert(!resource_command(st, owner, root, "save", token));
+    assert(!tiku_editdoc_modified(e->doc));
+    resource_token(st, owner, root, token);
+    assert(!tiku_codeview_select(e->view, 0, 0));
+    assert(resource_command(st, owner, root, "undo", token) ==
+           TIKU_RESOURCE_STALE);
+    tiku_editdoc_set_read_only(e->doc, 1);
+    resource_token(st, owner, root, token);
+    assert(resource_command(st, owner, root, "newline", token) ==
+           TIKU_RESOURCE_READ_ONLY);
+    tiku_editdoc_set_read_only(e->doc, 0);
+    assert(!tiku_codeview_insert(e->view, "x", 1, 0));
+    FILE *f = fopen(e->path, "w");
+    assert(f);
+    assert(fputs("external", f) >= 0);
+    assert(!fclose(f));
+    resource_token(st, owner, root, token);
+    assert(resource_command(st, owner, root, "save", token) ==
+           TIKU_RESOURCE_APPLY_FAILED);
+    assert(tiku_editdoc_modified(e->doc));
+    tiku_app_resources_free(owner);
+    tiku_ide_edit_drop(st, e);
+}
 int main(int argc, char **argv)
 {
     char drafts[600];
@@ -952,6 +1030,7 @@ int main(int argc, char **argv)
         splash_events(st);
     } else if (argc > 1 && !strcmp(argv[1], "menus")) {
         page_menus(st);
+    page_resources(st);
     } else {
     kept_bytes(st);
     basic_limits(st);
@@ -969,6 +1048,7 @@ int main(int argc, char **argv)
     page_scrollbar(st);
     splash_events(st);
     page_menus(st);
+    page_resources(st);
     }
     tiku_surface_free(st->proj_surface);
     tiku_surface_free(st->msg_surface);

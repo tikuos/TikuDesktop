@@ -42,8 +42,8 @@ check(int cond, const char *what)
  * Compiled here rather than shipped: the point of the check is what the
  * loader does with a file it did not build, including a wrong one.
  */
-static int
-build_so(const char *path, const char *body)
+static int build_so_identity(const char *path, const char *body,
+                             const char *identity)
 {
     char source[512];
     char command[1024];
@@ -54,12 +54,21 @@ build_so(const char *path, const char *body)
     if (f == NULL) {
         return -1;
     }
-    (void)fprintf(f, "#include \"tiku_app.h\"\n%s\n", body);
+    (void)fprintf(f,
+                  "#define TIKU_SDK_IDENTITY \"%s\"\n"
+                  "#include \"tiku_app.h\"\n%s\n",
+                  identity, body);
     (void)fclose(f);
     snprintf(command, sizeof command,
-             "cc -std=gnu11 -fPIC -shared -I" TIKU_KITS_DIR "/application -I" TIKU_KITS_DIR "/interface -I" TIKU_KITS_DIR "/support -o %s %s "
+             "cc -std=gnu11 -fPIC -shared -DTIKU_APP_SO -I" TIKU_KITS_DIR "/application -I" TIKU_KITS_DIR "/interface -I" TIKU_KITS_DIR "/support -o %s %s "
              "2>/dev/null", path, source);
     return system(command);
+}
+
+/** @brief Build a fixture against the test host's selected SDK identity. */
+static int build_so(const char *path, const char *body)
+{
+    return build_so_identity(path, body, TIKU_SDK_IDENTITY);
 }
 
 int
@@ -90,6 +99,16 @@ main(void)
     check(app != NULL && app->start != NULL,
           "with its entry points intact across the boundary");
 
+    (void)build_so_identity(
+        "/tmp/trk_load_identity.so",
+        "static const tiku_app_descriptor_t a = { .id = \"x\", .name = \"X\" };\n"
+        "const tiku_app_export_t tiku_app_v1 = { TIKU_APP_ABI, sizeof(tiku_app_descriptor_t), &a };\n",
+        "0000000000000000000000000000000000000000000000000000000000000000");
+    why[0] = '\0';
+    app = tiku_app_load("/tmp/trk_load_identity.so", why, sizeof why);
+    check(app == NULL && strstr(why, "SDK"),
+          "an object built for another SDK identity is refused");
+
     (void)build_so("/tmp/trk_load_abi.so",
                    "static const tiku_app_descriptor_t a = {\n"
                    "  .id = \"x\", .name = \"X\" };\n"
@@ -98,7 +117,7 @@ main(void)
                    "  (uint32_t)sizeof(tiku_app_descriptor_t), &a };\n");
     why[0] = '\0';
     app = tiku_app_load("/tmp/trk_load_abi.so", why, sizeof why);
-    check(app == NULL && why[0] != '\0',
+    check(app == NULL && strstr(why, "interface"),
           "an object built for another interface is refused, and says so");
 
     (void)build_so("/tmp/trk_load_size.so",
@@ -108,13 +127,13 @@ main(void)
                    "  TIKU_APP_ABI, 8u, &a };\n");
     why[0] = '\0';
     app = tiku_app_load("/tmp/trk_load_size.so", why, sizeof why);
-    check(app == NULL && why[0] != '\0',
+    check(app == NULL && strstr(why, "descriptor"),
           "so is one whose descriptor is a different size here");
 
     (void)build_so("/tmp/trk_load_bare.so", "int nothing_useful = 1;\n");
     why[0] = '\0';
     app = tiku_app_load("/tmp/trk_load_bare.so", why, sizeof why);
-    check(app == NULL && why[0] != '\0',
+    check(app == NULL && strstr(why, "tiku_app_v1"),
           "an object exporting no application is refused by name");
 
     why[0] = '\0';

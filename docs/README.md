@@ -31,3 +31,6 @@ and Makefiles for the current structure.
 
 [Independent application builds](architecture/application-builds.md) covers
 the core-only desktop, exported SDK and standalone application packages.
+
+[Resource Inspector](guides/resource-inspector.md) covers native inspection and
+the installed local resource command.

@@ -29,6 +29,7 @@
 #include "tiku_work.h"
 #include "tiku_config.h"
 #include "tiku_config_outbox.h"
+#include "tiku_desktop_device_config.h"
 #include <time.h>
 #include <stdint.h>
 
@@ -997,34 +998,16 @@ static void dp_run(void *ctx)
             int ci = j->write_at == DP_NAME ? 0 :
                      j->write_at == DP_CPU ? 1 : -1;
             int rc;
-            tiku_config_pending_t pending = {0};
-            tiku_config_snapshot_t current = {0};
             if (j->write_at == DP_TIME)
                 snprintf(j->input, sizeof j->input, "%lu",
-            (unsigned long)time(NULL));
-            if (ci >= 0) (void)tiku_config_read(j->backend, path, &current);
-            if (ci >= 0 && local)
-                (void)tiku_config_outbox_inspect(directory, j->backend,
-                                                 &pending);
-            int managed = ci >= 0 && (current.mode || j->config[ci].mode);
-            /* A pending record naming a device blocks the save; one naming
-             * none (a local fault) blocks only a board using recovery. */
-            int record = ci >= 0 && pending.state && pending.uid[0];
-            if (record || (managed && (!local || pending.state))) {
-                snprintf(err, sizeof err,
-                         "Resolve Configuration recovery below before saving.");
-                rc = -1;
-            } else if (managed) {
-                if (current.mode != 1 || j->config[ci].mode != 1) {
-                    snprintf(err, sizeof err,
-                             "Recovery state changed or unavailable. "
-                             "Refresh before saving.");
-                    rc = -1;
-                } else rc = tiku_config_outbox_save(directory, j->backend,
-                    path, &j->config[ci], j->input, strlen(j->input),
-                    err, sizeof err);
-            } else rc = j->backend->ops->write(j->backend, path, j->input,
-                       strlen(j->input), err, sizeof err);
+                         (unsigned long)time(NULL));
+            if (ci >= 0)
+                rc = desktop_device_config_gui_save(j->backend, path,
+                                                    &j->config[ci], j->input,
+                                                    err, sizeof err);
+            else
+                rc = j->backend->ops->write(j->backend, path, j->input,
+                                            strlen(j->input), err, sizeof err);
             if (rc != 0) {
                 snprintf(j->status, sizeof j->status, "Could not apply: %.150s",
                      err[0] ? err : "device unavailable or value rejected");

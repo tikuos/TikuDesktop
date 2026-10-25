@@ -29,3 +29,7 @@ foundation_wildcard = $(patsubst $(FOUNDATION_VIEW)/%,%,$(wildcard $(addprefix $
 
 TRK_INC := $(patsubst -Isystem/%,-I$(FOUNDATION_VIEW)/system/%,$(TRK_INC))
 TRK_INC += -I$(FOUNDATION_VIEW)/system/product
+
+# Source tools inspect the view selected for this product build.
+export STOMME_SOURCE_PRODUCT := $(CURDIR)
+export STOMME_SOURCE_VIEW := $(abspath $(FOUNDATION_VIEW))

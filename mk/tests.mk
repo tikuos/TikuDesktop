@@ -3,7 +3,7 @@ test_record_settings_SRCS := $(test_settings_SRCS)
 test_default_settings_SRCS := $(test_settings_SRCS)
 test_catalog_settings_SRCS := $(test_settings_SRCS)
 test_type_settings_SRCS := $(filter-out system/shared/core/tiku_trk_type_settings.c,$(test_settings_SRCS))
-test_resource_session_SRCS := system/shared/core/tiku_trk_resource_session.c
+test_resource_session_SRCS := system/shared/core/tiku_trk_resource_session.c system/shared/core/tiku_trk_resource_discovery.c
 TEST_SOURCE_FLAGS := -DTIKU_TEST_SOURCE_ROOT=\"$(FOUNDATION_VIEW)\"
 # Suites are discovered from the four ownership groups and run by make test.
 TEST_SOURCES := $(sort $(call foundation_wildcard,tests/system/test_*.c tests/kits/test_*.c \
@@ -292,12 +292,22 @@ test_source_models_SRCS := apps/ide/tiku_ide_project.c \
     apps/reader/tiku_reader_document.c
 test_module_exports_LDLIBS := -ldl
 test_module_exports_CFLAGS := -DTIKU_TEST_APPS=\"$(APPS_D)\"
-$(BUILD)/tests/test_module_exports: | $(APPS_D)/basic/TikuBasic.so \
+$(BUILD)/tests/test_module_exports: | $(APPS_D)/resource-inspector/ResourceInspector.so $(APPS_D)/basic/TikuBasic.so \
     $(APPS_D)/c/TikuC.so $(APPS_D)/editor/editor.so $(APPS_D)/reader/TikuReader.so \
     $(APPS_D)/marker/TikuMarker.so \
     $(APPS_D)/circuit/TikuCircuit.so \
     $(APPS_D)/bench/Bench.so $(APPS_D)/console/TikuConsole.so
 test_deviceprefs_LDLIBS := $(X11_LIBS) -lm
+test_deviceprefs_SRCS := system/desktop/tiku_desktop_device_config.c
+test_device_resources_SRCS := system/desktop/tiku_desktop_device_config.c \
+    system/shared/core/tiku_trk_resource_arguments.c
+test_device_resources_LDLIBS := $(X11_LIBS) -lm -pthread
+test_device_resources_CFLAGS := -I$(FOUNDATION_VIEW)/system/desktop
+test_device_resources_fixture_FILE := tests/integration/device_resources_fixture.c
+test_device_resources_fixture_SRCS := $(test_device_resources_SRCS) \
+    system/shared/core/tiku_trk_resource_session.c
+test_device_resources_fixture_CFLAGS := $(test_device_resources_CFLAGS)
+test_device_resources_fixture_LDLIBS := $(test_device_resources_LDLIBS)
 test_calculator_LDLIBS := $(X11_LIBS) -lm
 test_look_LDLIBS := $(X11_LIBS) -lm
 test_notes_SRCS := $(filter-out apps/notes/tiku_notes.c,$(NOTES_SRC))
@@ -650,3 +660,46 @@ test_window_resources_SRCS := system/shared/core/tiku_trk_window_resources.c
 test_lifecycle_resources_SRCS := system/shared/core/tiku_trk_lifecycle_resources.c
 
 test_app_resources_SRCS := system/shared/core/tiku_trk_app_resources.c
+
+test_resource_arguments_SRCS := system/shared/core/tiku_trk_resource_arguments.c
+test_controlled_observer_SRCS := system/shared/core/tiku_trk_resource_observer.c system/shared/core/tiku_trk_resource_arguments.c
+test_clipboard_resources_SRCS := $(test_controlled_observer_SRCS) system/shared/core/tiku_trk_clipboard_resources.c
+test_volume_resources_SRCS := $(test_controlled_observer_SRCS) system/shared/core/tiku_trk_volume_resources.c
+test_volume_requests_CFLAGS := -ffunction-sections -fdata-sections -I$(FOUNDATION_VIEW)/system/desktop
+test_volume_requests_LDLIBS := -lm $(GC_SECTIONS)
+test_access_dispatch_CFLAGS := -ffunction-sections -fdata-sections -I$(FOUNDATION_VIEW)/system/desktop
+test_access_dispatch_LDLIBS := $(X11_LIBS) -lm $(GC_SECTIONS)
+
+test_volume_resources_LDLIBS := -lm
+
+.PHONY: test-host-resources-sdk
+test-host-resources-sdk: core sdk apps shells
+	python3 $(FOUNDATION_ROOT)/tests/integration/run_host_resources_sdk.py --sdk $(BUILD)/sdk --desktop $(SYSTEM)/TikuDesktop --evidence $(BUILD)/host-resources-sdk
+
+test_native_observations_LDLIBS := $(X11_LIBS) -lm
+
+test_application_provider_SRCS := system/desktop/tiku_desktop_app_vfs.c
+test_application_provider_CFLAGS := -I$(FOUNDATION_VIEW)/system/desktop
+test_application_provider_LDLIBS := $(X11_LIBS) -lm
+
+test_editor_resources_SRCS := apps/editor/tiku_editor_resources.c apps/editor/tiku_editor_preferences.c apps/editor/tiku_editor_file.c
+test_editor_resources_CFLAGS := -I$(FOUNDATION_VIEW)/apps/editor -I$(FOUNDATION_VIEW)/apps/shared -ffunction-sections -fdata-sections
+test_editor_resources_LIBS := $(LIB_EDITOR)
+test_editor_resources_LDLIBS := $(X11_LIBS) -lm $(GC_SECTIONS)
+test_document_resources_CFLAGS := -I$(FOUNDATION_VIEW)/apps/shared
+test_document_resources_LIBS := $(LIB_DOCUMENT)
+test_document_resources_LDLIBS := $(X11_LIBS) -lm
+
+.PHONY: test-application-resources-sdk
+test-application-resources-sdk: core sdk apps shells
+	python3 $(FOUNDATION_ROOT)/tests/integration/run_application_resources_sdk.py --sdk $(BUILD)/sdk --evidence $(BUILD)/application-resources-sdk
+
+.PHONY: test-application-models-sdk
+test-application-models-sdk: core sdk apps shells
+	python3 $(FOUNDATION_ROOT)/tests/integration/run_application_models_sdk.py --sdk $(SDK_DIR) --desktop $(SYSTEM)/TikuDesktop --apps $(BUILD)/runtime/apps --evidence $(BUILD)/application-models-sdk
+
+# The inspector model and its isolated native transport mailbox.
+test_resource_inspector_SRCS := apps/resource-inspector/tiku_inspector_transport.c
+test_resource_inspector_CFLAGS := -I$(FOUNDATION_VIEW)/apps/resource-inspector
+test_resource_inspector_LIBS := $(LIB_EDITOR)
+test_resource_inspector_LDLIBS := $(X11_LIBS) -lm -pthread

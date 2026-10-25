@@ -16,7 +16,7 @@ from source_layout import source_path
 ROOT = Path(__file__).resolve().parents[1]
 # The single-window TikuTracker is the harness's, under build/dev/: it
 # ships nowhere, so nothing starts the file manager without the desk.
-SYSTEM = ('TikuDesktop', 'tiku-run', 'tiku-desk')
+SYSTEM = ('TikuDesktop', 'tiku-run', 'tiku-desk', 'stomme-resources')
 LAUNCHERS = ('TikuDesktop', 'tiku-desk')
 RESOURCE_DIRS = ('system', 'applications', 'sounds', 'help', 'strings')
 HELPERS = {'basic': ('tiku-basic',), 'editor': ('tiku-edit',),

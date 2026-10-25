@@ -15,10 +15,11 @@ int main(void)
     const struct {
         const char *path, *id, *name, *private_symbol;
     } cases[] = {
+        {"resource-inspector/ResourceInspector.so",
+         "org.stomme.resource-inspector", "Resource Inspector", "ri_action"},
         {"basic/TikuBasic.so", "org.tikuos.tikubasic", "TikuBasic",
          "tiku_ide_project_parse"},
-        {"c/TikuC.so", "org.tikuos.tikuc", "TikuC",
-         "tiku_ide_project_parse"},
+        {"c/TikuC.so", "org.tikuos.tikuc", "TikuC", "tiku_ide_project_parse"},
         {"editor/editor.so", "org.tikuos.edit", "Edit",
          "tiku_editor_read_document"},
         {"reader/TikuReader.so", "reader", "TikuReader",
@@ -27,8 +28,7 @@ int main(void)
          "tiku_reader_app_start"},
         {"circuit/TikuCircuit.so", "circuit", "TikuCircuit",
          "tiku_circuitview_open"},
-        {"bench/Bench.so", "tiku.bench", "Bench",
-         "tiku_bench_command_build"},
+        {"bench/Bench.so", "tiku.bench", "Bench", "tiku_bench_command_build"},
         {"console/TikuConsole.so", "tiku.console", "TikuConsole",
          "tiku_console_queue_bytes"},
     };

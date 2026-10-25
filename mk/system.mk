@@ -74,9 +74,13 @@ CORE := system/deskbar/tiku_trk_deskbar_prefs.c \
         system/shared/ui/poseview/tiku_trk_native_record.c \
         system/shared/core/tiku_trk_resource_observer.c \
         system/shared/core/tiku_trk_window_resources.c \
+        system/shared/core/tiku_trk_resource_arguments.c \
+        system/shared/core/tiku_trk_clipboard_resources.c \
+        system/shared/core/tiku_trk_volume_resources.c \
         system/shared/core/tiku_trk_lifecycle_resources.c \
         system/shared/core/tiku_trk_app_resources.c \
         system/shared/core/tiku_trk_settings.c \
+        system/shared/core/tiku_trk_resource_discovery.c \
         system/shared/core/tiku_trk_resource_session.c \
         system/shared/core/tiku_trk_task.c system/shared/core/tiku_trk_match.c \
         system/shared/core/tiku_trk_associations.c \
@@ -142,7 +146,12 @@ TRACKER_SRC := $(COMMON) system/shared/shell/tiku_trk_addon.c \
                system/shared/ui/windows/tiku_trk_folder_window.c \
                $(TRACKER_SHELL) system/shared/shell/tiku_trk_launcher.c
 # The desktop shell itself, one composition over several files.
-DESKTOP_SHELL := system/desktop/tiku_desktop_lifecycle_vfs.c \
+DESKTOP_SHELL := system/desktop/tiku_desktop_devices_vfs.c \
+                 system/desktop/tiku_desktop_app_vfs.c \
+                system/desktop/tiku_desktop_host_vfs.c \
+                 system/desktop/tiku_desktop_access_vfs.c \
+                 system/desktop/tiku_desktop_print_vfs.c \
+                 system/desktop/tiku_desktop_lifecycle_vfs.c \
                  system/desktop/tiku_desktop_catalog_vfs.c \
                  system/desktop/tiku_desktop_actions_vfs.c \
                  system/desktop/tiku_trk_desktop_resources.c \
@@ -179,7 +188,9 @@ DESKTOP_SHELL := system/desktop/tiku_desktop_lifecycle_vfs.c \
                  system/desktop/tiku_desktop_filesystem_jobs.c \
                  system/desktop/tiku_desktop_media_jobs.c \
                  system/desktop/tiku_desktop_device_stats.c \
-                 system/desktop/tiku_trk_desktop_deviceprefs.c \
+                 system/desktop/tiku_desktop_device_resources.c \
+               system/desktop/tiku_desktop_device_config.c \
+               system/desktop/tiku_trk_desktop_deviceprefs.c \
                  system/desktop/tiku_trk_desktop_vfs.c \
                  system/desktop/tiku_trk_desktop_startup.c \
                  system/desktop/tiku_trk_desktop_associations.c \
@@ -262,3 +273,8 @@ $(BUILD)/tools/icon-export: $(call objs,tools/tiku_trk_icon_export.c) $(DESK_LIB
 shells: $(SYSTEM)/TikuDesktop \
         $(DEV)/TikuTracker $(DEV)/TikuDesktop \
         $(DEV)/trk-conduct $(BUILD)/tools/icon-export
+
+# The desktop command client links the exported application/support interfaces.
+core shells: $(SYSTEM)/stomme-resources
+$(SYSTEM)/stomme-resources: $(FOUNDATION_ROOT)/examples/stomme_resources.c $(LIB_APPLICATION) $(LIB_SUPPORT) | $(SYSTEM)
+	$(CC) $(CFLAGS) $(KIT_INC) -o $@ $< $(LIB_APPLICATION) $(LIB_SUPPORT) $(LDFLAGS) -lm -pthread

@@ -1,0 +1,9 @@
+version=1
+id=resource-inspector
+name=Resource Inspector
+module=ResourceInspector.so
+category=development
+icon=tool_inspector
+types=
+startup=apps/ResourceInspector.so
+help=
